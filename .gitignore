@@ -1,0 +1,6 @@
+node_modules/
+.env
+backend/uploads/videos/*
+!backend/uploads/videos/.gitkeep
+*.mp4
+.DS_Store

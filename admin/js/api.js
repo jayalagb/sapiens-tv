@@ -1,0 +1,75 @@
+const API_BASE = 'http://localhost:4000/api';
+let authToken = localStorage.getItem('sesamotv_admin_token');
+
+async function apiCall(endpoint, options = {}) {
+    const headers = { ...options.headers };
+    if (authToken) headers['Authorization'] = 'Bearer ' + authToken;
+    if (!(options.body instanceof FormData)) {
+        headers['Content-Type'] = 'application/json';
+    }
+
+    const res = await fetch(API_BASE + endpoint, { ...options, headers });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Error');
+    return data;
+}
+
+async function apiLogin(username, password) {
+    const data = await apiCall('/auth/login', {
+        method: 'POST',
+        body: JSON.stringify({ username, password })
+    });
+    authToken = data.token;
+    localStorage.setItem('sesamotv_admin_token', data.token);
+    return data;
+}
+
+async function apiGetMe() {
+    return await apiCall('/auth/me');
+}
+
+async function apiGetVideos() {
+    return await apiCall('/videos');
+}
+
+async function apiUploadVideo(formData) {
+    return await apiCall('/videos', { method: 'POST', body: formData });
+}
+
+async function apiUpdateVideo(uid, data) {
+    return await apiCall('/videos/' + uid, {
+        method: 'PUT',
+        body: JSON.stringify(data)
+    });
+}
+
+async function apiDeleteVideo(uid) {
+    return await apiCall('/videos/' + uid, { method: 'DELETE' });
+}
+
+async function apiReorderVideos(order) {
+    return await apiCall('/videos/reorder', {
+        method: 'PUT',
+        body: JSON.stringify({ order })
+    });
+}
+
+async function apiGetTags() {
+    return await apiCall('/tags');
+}
+
+async function apiCreateTag(name) {
+    return await apiCall('/tags', {
+        method: 'POST',
+        body: JSON.stringify({ name })
+    });
+}
+
+async function apiDeleteTag(id) {
+    return await apiCall('/tags/' + id, { method: 'DELETE' });
+}
+
+function logout() {
+    authToken = null;
+    localStorage.removeItem('sesamotv_admin_token');
+}
