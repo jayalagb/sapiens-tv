@@ -2,18 +2,18 @@ const express = require('express');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
+const os = require('os');
 const { v4: uuidv4 } = require('uuid');
 const { query } = require('../config/database');
 const { authenticateToken, requireApprovedUser } = require('../middleware/auth');
+const { uploadBlob, getBlobProperties, downloadBlobStream, deleteBlob } = require('../config/blobStorage');
 
 const router = express.Router();
 
-// Multer config for video uploads
+// Multer config: upload to temp directory, then move to blob storage
 const storage = multer.diskStorage({
     destination: (req, file, cb) => {
-        const dir = path.join(__dirname, '..', 'uploads', 'videos');
-        if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-        cb(null, dir);
+        cb(null, os.tmpdir());
     },
     filename: (req, file, cb) => {
         const ext = path.extname(file.originalname);
@@ -173,7 +173,7 @@ router.get('/:uid', requireApprovedUser, async (req, res) => {
     }
 });
 
-// GET /api/videos/:uid/stream - Stream video (requires approved user, accepts ?token= for <video src>)
+// GET /api/videos/:uid/stream - Stream video from Azure Blob (requires approved user, accepts ?token= for <video src>)
 router.get('/:uid/stream', requireApprovedUser, async (req, res) => {
     try {
         const result = await query('SELECT video_url FROM videos WHERE uid = $1', [req.params.uid]);
@@ -181,16 +181,13 @@ router.get('/:uid/stream', requireApprovedUser, async (req, res) => {
             return res.status(404).json({ error: 'Video no encontrado' });
         }
 
-        const videoPath = path.join(__dirname, '..', result.rows[0].video_url);
-        if (!fs.existsSync(videoPath)) {
-            return res.status(404).json({ error: 'Archivo no encontrado' });
-        }
-
-        const stat = fs.statSync(videoPath);
-        const fileSize = stat.size;
-        const ext = path.extname(videoPath).toLowerCase();
+        const blobName = result.rows[0].video_url;
+        const ext = path.extname(blobName).toLowerCase();
         const mimeTypes = { '.mp4': 'video/mp4', '.webm': 'video/webm', '.mov': 'video/quicktime' };
         const contentType = mimeTypes[ext] || 'video/mp4';
+
+        const properties = await getBlobProperties(blobName);
+        const fileSize = properties.contentLength;
 
         const range = req.headers.range;
         if (range) {
@@ -199,7 +196,7 @@ router.get('/:uid/stream', requireApprovedUser, async (req, res) => {
             const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
             const chunkSize = end - start + 1;
 
-            const stream = fs.createReadStream(videoPath, { start, end });
+            const stream = await downloadBlobStream(blobName, start, chunkSize);
             res.writeHead(206, {
                 'Content-Range': `bytes ${start}-${end}/${fileSize}`,
                 'Accept-Ranges': 'bytes',
@@ -208,14 +205,18 @@ router.get('/:uid/stream', requireApprovedUser, async (req, res) => {
             });
             stream.pipe(res);
         } else {
+            const stream = await downloadBlobStream(blobName, 0);
             res.writeHead(200, {
                 'Content-Length': fileSize,
                 'Content-Type': contentType
             });
-            fs.createReadStream(videoPath).pipe(res);
+            stream.pipe(res);
         }
     } catch (error) {
         console.error('Stream error:', error);
+        if (error.statusCode === 404) {
+            return res.status(404).json({ error: 'Archivo no encontrado en storage' });
+        }
         res.status(500).json({ error: 'Error al reproducir video' });
     }
 });
@@ -285,12 +286,20 @@ router.post('/', authenticateToken, upload.single('video'), async (req, res) => 
 
         const { title, description, tags, rating } = req.body;
         if (!title) {
+            // Clean up temp file
+            fs.unlinkSync(req.file.path);
             return res.status(400).json({ error: 'Titulo requerido' });
         }
 
         const uid = uuidv4();
-        const videoUrl = `/uploads/videos/${req.file.filename}`;
+        const blobName = req.file.filename; // uuid.ext
         const videoRating = Math.min(5, Math.max(0, parseFloat(rating) || 0));
+
+        // Upload to Azure Blob Storage
+        await uploadBlob(blobName, req.file.path);
+
+        // Delete temp file
+        fs.unlinkSync(req.file.path);
 
         // Get max sort_order
         const maxOrder = await query('SELECT COALESCE(MAX(sort_order), 0) + 1 as next_order FROM videos');
@@ -300,7 +309,7 @@ router.post('/', authenticateToken, upload.single('video'), async (req, res) => 
             `INSERT INTO videos (uid, title, description, video_url, sort_order, rating, uploaded_by)
              VALUES ($1, $2, $3, $4, $5, $6, $7)
              RETURNING id, uid, title, description, video_url, sort_order, rating, created_at`,
-            [uid, title, description || '', videoUrl, sortOrder, videoRating, req.admin.id]
+            [uid, title, description || '', blobName, sortOrder, videoRating, req.admin.id]
         );
 
         const video = result.rows[0];
@@ -323,6 +332,10 @@ router.post('/', authenticateToken, upload.single('video'), async (req, res) => 
             createdAt: video.created_at
         });
     } catch (error) {
+        // Clean up temp file on error
+        if (req.file && fs.existsSync(req.file.path)) {
+            fs.unlinkSync(req.file.path);
+        }
         console.error('Upload video error:', error);
         res.status(500).json({ error: 'Error al subir video' });
     }
@@ -394,11 +407,8 @@ router.delete('/:uid', authenticateToken, async (req, res) => {
             return res.status(404).json({ error: 'Video no encontrado' });
         }
 
-        // Delete file
-        const filePath = path.join(__dirname, '..', result.rows[0].video_url);
-        if (fs.existsSync(filePath)) {
-            fs.unlinkSync(filePath);
-        }
+        // Delete blob from Azure Storage
+        await deleteBlob(result.rows[0].video_url);
 
         await query('DELETE FROM videos WHERE id = $1', [result.rows[0].id]);
         res.json({ message: 'Video eliminado' });
