@@ -1,4 +1,4 @@
-const API_BASE = 'http://localhost:4000/api';
+const API_BASE = '/api';
 let authToken = localStorage.getItem('sesamotv_admin_token');
 
 async function apiCall(endpoint, options = {}) {
