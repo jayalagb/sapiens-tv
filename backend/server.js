@@ -5,6 +5,7 @@ const rateLimit = require('express-rate-limit');
 const path = require('path');
 require('dotenv').config();
 
+const { geoBlock } = require('./middleware/geoBlock');
 const authRoutes = require('./routes/auth');
 const userAuthRoutes = require('./routes/userAuth');
 const usersRoutes = require('./routes/users');
@@ -33,6 +34,9 @@ app.use(express.urlencoded({ extended: true }));
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 app.use('/admin', express.static(path.join(__dirname, '..', 'admin')));
 app.use(express.static(path.join(__dirname, '..', 'public')));
+
+// Geo-blocking (solo permite acceso desde España en producción)
+app.use(geoBlock);
 
 // API routes
 app.use('/api/auth', authRoutes);
