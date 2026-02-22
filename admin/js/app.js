@@ -4,6 +4,10 @@ let videos = [];
 let tags = [];
 let editingVideo = null;
 let dragItem = null;
+let users = [];
+let userCounts = { pending: 0, approved: 0, rejected: 0, total: 0, pendingResets: 0 };
+let usersFilter = 'all';
+let resetRequests = [];
 
 async function init() {
     if (authToken) {
@@ -11,6 +15,7 @@ async function init() {
             admin = await apiGetMe();
             currentScreen = 'dashboard';
             await loadData();
+            await loadUserCounts();
         } catch (e) {
             logout();
         }
@@ -22,6 +27,26 @@ async function loadData() {
     [videos, tags] = await Promise.all([apiGetVideos(), apiGetTags()]);
 }
 
+async function loadUserCounts() {
+    try {
+        const data = await apiGetUsers();
+        userCounts = data.counts;
+    } catch (e) { /* ignore */ }
+}
+
+async function loadUsers(filter) {
+    try {
+        const params = filter && filter !== 'all' ? { status: filter } : {};
+        const [data, resets] = await Promise.all([apiGetUsers(params), apiGetResetRequests()]);
+        users = data.users;
+        userCounts = data.counts;
+        resetRequests = resets;
+    } catch (e) {
+        users = [];
+        resetRequests = [];
+    }
+}
+
 function render() {
     const app = document.getElementById('app');
     switch (currentScreen) {
@@ -30,7 +55,22 @@ function render() {
         case 'upload': app.innerHTML = renderUpload(); break;
         case 'edit': app.innerHTML = renderEdit(); break;
         case 'tags': app.innerHTML = renderTags(); break;
+        case 'users': app.innerHTML = renderUsers(); break;
     }
+}
+
+function renderSidebar() {
+    const pendingBadge = userCounts.pending > 0 ? `<span class="badge">${userCounts.pending}</span>` : '';
+    return `
+        <nav class="sidebar">
+            <h2 class="sidebar-logo">SesamoTV</h2>
+            <div class="nav-item ${currentScreen === 'dashboard' ? 'active' : ''}" onclick="navigateTo('dashboard')">Videos</div>
+            <div class="nav-item ${currentScreen === 'upload' ? 'active' : ''}" onclick="navigateTo('upload')">Subir Video</div>
+            <div class="nav-item ${currentScreen === 'tags' ? 'active' : ''}" onclick="navigateTo('tags')">Tags</div>
+            <div class="nav-item ${currentScreen === 'users' ? 'active' : ''}" onclick="navigateTo('users')">Usuarios ${pendingBadge}</div>
+            <div class="nav-item logout" onclick="handleLogout()">Cerrar sesion</div>
+        </nav>
+    `;
 }
 
 function renderLogin() {
@@ -55,6 +95,7 @@ async function handleLogin() {
         admin = data.admin;
         currentScreen = 'dashboard';
         await loadData();
+        await loadUserCounts();
         render();
     } catch (e) {
         alert('Error: ' + e.message);
@@ -64,13 +105,7 @@ async function handleLogin() {
 function renderDashboard() {
     return `
         <div class="admin-layout">
-            <nav class="sidebar">
-                <h2 class="sidebar-logo">SesamoTV</h2>
-                <div class="nav-item active" onclick="navigateTo('dashboard')">Videos</div>
-                <div class="nav-item" onclick="navigateTo('upload')">Subir Video</div>
-                <div class="nav-item" onclick="navigateTo('tags')">Tags</div>
-                <div class="nav-item logout" onclick="handleLogout()">Cerrar sesion</div>
-            </nav>
+            ${renderSidebar()}
             <main class="main-content">
                 <div class="content-header">
                     <h2>Videos (${videos.length})</h2>
@@ -88,7 +123,7 @@ function renderDashboard() {
                             </div>
                             <div class="video-row-info">
                                 <div class="video-row-title">${escapeHtml(v.title)}</div>
-                                <div class="video-row-meta">${v.views || 0} vistas | ${(v.tags||[]).map(t=>t.name).join(', ') || 'sin tags'}</div>
+                                <div class="video-row-meta">${v.rating || 0}/5 &#9733; | ${v.views || 0} vistas | ${(v.tags||[]).map(t=>t.name).join(', ') || 'sin tags'}</div>
                             </div>
                             <div class="video-row-actions">
                                 <button class="btn btn-sm" onclick="startEdit('${v.uid}')">Editar</button>
@@ -105,13 +140,7 @@ function renderDashboard() {
 function renderUpload() {
     return `
         <div class="admin-layout">
-            <nav class="sidebar">
-                <h2 class="sidebar-logo">SesamoTV</h2>
-                <div class="nav-item" onclick="navigateTo('dashboard')">Videos</div>
-                <div class="nav-item active" onclick="navigateTo('upload')">Subir Video</div>
-                <div class="nav-item" onclick="navigateTo('tags')">Tags</div>
-                <div class="nav-item logout" onclick="handleLogout()">Cerrar sesion</div>
-            </nav>
+            ${renderSidebar()}
             <main class="main-content">
                 <h2>Subir Video</h2>
                 <div class="form-card">
@@ -132,6 +161,15 @@ function renderUpload() {
                     <div class="form-group">
                         <label>Descripcion</label>
                         <textarea id="upload-desc" class="input textarea" placeholder="Descripcion (opcional)"></textarea>
+                    </div>
+                    <div class="form-group">
+                        <label>Puntuacion</label>
+                        <div style="display:flex;align-items:center;gap:12px;">
+                            <input type="range" id="upload-rating" min="0" max="5" step="0.5" value="0"
+                                   oninput="document.getElementById('upload-rating-val').textContent=this.value"
+                                   style="flex:1;">
+                            <span id="upload-rating-val" style="min-width:24px;font-weight:600;">0</span>
+                        </div>
                     </div>
                     <div class="form-group">
                         <label>Tags</label>
@@ -158,13 +196,7 @@ function renderEdit() {
 
     return `
         <div class="admin-layout">
-            <nav class="sidebar">
-                <h2 class="sidebar-logo">SesamoTV</h2>
-                <div class="nav-item" onclick="navigateTo('dashboard')">Videos</div>
-                <div class="nav-item" onclick="navigateTo('upload')">Subir Video</div>
-                <div class="nav-item" onclick="navigateTo('tags')">Tags</div>
-                <div class="nav-item logout" onclick="handleLogout()">Cerrar sesion</div>
-            </nav>
+            ${renderSidebar()}
             <main class="main-content">
                 <h2>Editar Video</h2>
                 <div class="form-card">
@@ -175,6 +207,15 @@ function renderEdit() {
                     <div class="form-group">
                         <label>Descripcion</label>
                         <textarea id="edit-desc" class="input textarea">${escapeHtml(v.description || '')}</textarea>
+                    </div>
+                    <div class="form-group">
+                        <label>Puntuacion</label>
+                        <div style="display:flex;align-items:center;gap:12px;">
+                            <input type="range" id="edit-rating" min="0" max="5" step="0.5" value="${v.rating || 0}"
+                                   oninput="document.getElementById('edit-rating-val').textContent=this.value"
+                                   style="flex:1;">
+                            <span id="edit-rating-val" style="min-width:24px;font-weight:600;">${v.rating || 0}</span>
+                        </div>
                     </div>
                     <div class="form-group">
                         <label>Tags</label>
@@ -200,13 +241,7 @@ function renderEdit() {
 function renderTags() {
     return `
         <div class="admin-layout">
-            <nav class="sidebar">
-                <h2 class="sidebar-logo">SesamoTV</h2>
-                <div class="nav-item" onclick="navigateTo('dashboard')">Videos</div>
-                <div class="nav-item" onclick="navigateTo('upload')">Subir Video</div>
-                <div class="nav-item active" onclick="navigateTo('tags')">Tags</div>
-                <div class="nav-item logout" onclick="handleLogout()">Cerrar sesion</div>
-            </nav>
+            ${renderSidebar()}
             <main class="main-content">
                 <h2>Tags</h2>
                 <div class="form-card">
@@ -229,7 +264,139 @@ function renderTags() {
     `;
 }
 
-// --- Actions ---
+// --- Users Management ---
+
+function renderUsers() {
+    const resetsBadge = resetRequests.length > 0 ? `<span class="badge">${resetRequests.length}</span>` : '';
+    return `
+        <div class="admin-layout">
+            ${renderSidebar()}
+            <main class="main-content">
+                <div class="content-header">
+                    <h2>Gestion de Usuarios</h2>
+                </div>
+
+                ${resetRequests.length > 0 ? `
+                    <div class="reset-requests-section">
+                        <h3>Solicitudes de Reset de Contrasena ${resetsBadge}</h3>
+                        ${resetRequests.map(r => `
+                            <div class="user-row status-pending">
+                                <div class="user-info">
+                                    <div class="user-name-text">${escapeHtml(r.username)}</div>
+                                    <div class="user-email">${escapeHtml(r.email)}</div>
+                                    <div class="user-meta-text">Solicitado: ${timeAgo(r.createdAt)}</div>
+                                </div>
+                                <div class="user-actions">
+                                    <button class="btn btn-sm btn-primary" onclick="resetPassword('${r.userUid}', '${escapeHtml(r.username)}')">Resetear Contrasena</button>
+                                </div>
+                            </div>
+                        `).join('')}
+                    </div>
+                ` : ''}
+
+                <div class="user-stats">
+                    <span class="stat">Total: ${userCounts.total}</span>
+                    <span class="stat stat-pending">Pendientes: ${userCounts.pending}</span>
+                    <span class="stat stat-approved">Aprobados: ${userCounts.approved}</span>
+                    <span class="stat stat-rejected">Rechazados: ${userCounts.rejected}</span>
+                </div>
+                <div class="filter-tabs">
+                    <button class="filter-tab ${usersFilter === 'all' ? 'active' : ''}" onclick="filterUsers('all')">Todos (${userCounts.total})</button>
+                    <button class="filter-tab ${usersFilter === 'pending' ? 'active' : ''}" onclick="filterUsers('pending')">Pendientes (${userCounts.pending})</button>
+                    <button class="filter-tab ${usersFilter === 'approved' ? 'active' : ''}" onclick="filterUsers('approved')">Aprobados (${userCounts.approved})</button>
+                    <button class="filter-tab ${usersFilter === 'rejected' ? 'active' : ''}" onclick="filterUsers('rejected')">Rechazados (${userCounts.rejected})</button>
+                </div>
+                <div class="users-list">
+                    ${users.length === 0 ? '<p class="empty">No hay usuarios en esta categoria</p>' :
+                      users.map(u => `
+                        <div class="user-row status-${u.status}">
+                            <div class="user-info">
+                                <div class="user-name-text">${escapeHtml(u.username)}</div>
+                                <div class="user-email">${escapeHtml(u.email)}</div>
+                                <div class="user-meta-text">Registrado: ${timeAgo(u.createdAt)}${u.approvedBy ? ` | Aprobado por ${u.approvedBy}` : ''}</div>
+                            </div>
+                            <div class="user-status">
+                                <span class="status-badge status-${u.status}">${getStatusLabel(u.status)}</span>
+                            </div>
+                            <div class="user-actions">
+                                ${u.status === 'pending' ? `
+                                    <button class="btn btn-sm btn-success" onclick="approveUser('${u.uid}', '${escapeHtml(u.username)}')">Aprobar</button>
+                                    <button class="btn btn-sm btn-danger" onclick="rejectUser('${u.uid}', '${escapeHtml(u.username)}')">Rechazar</button>
+                                ` : u.status === 'rejected' ? `
+                                    <button class="btn btn-sm btn-success" onclick="approveUser('${u.uid}', '${escapeHtml(u.username)}')">Aprobar</button>
+                                ` : ''}
+                                <button class="btn btn-sm" onclick="resetPassword('${u.uid}', '${escapeHtml(u.username)}')">Reset Pass</button>
+                                <button class="btn btn-sm btn-danger" onclick="deleteUser('${u.uid}', '${escapeHtml(u.username)}')">Eliminar</button>
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>
+            </main>
+        </div>
+    `;
+}
+
+function getStatusLabel(status) {
+    return { pending: 'Pendiente', approved: 'Aprobado', rejected: 'Rechazado' }[status] || status;
+}
+
+function timeAgo(dateStr) {
+    const diff = Date.now() - new Date(dateStr).getTime();
+    const mins = Math.floor(diff / 60000);
+    if (mins < 60) return `hace ${mins}m`;
+    const hours = Math.floor(mins / 60);
+    if (hours < 24) return `hace ${hours}h`;
+    const days = Math.floor(hours / 24);
+    if (days < 30) return `hace ${days}d`;
+    return new Date(dateStr).toLocaleDateString('es-ES');
+}
+
+async function filterUsers(filter) {
+    usersFilter = filter;
+    await loadUsers(filter);
+    render();
+}
+
+async function approveUser(uid, username) {
+    if (!confirm(`Aprobar usuario "${username}"?`)) return;
+    try {
+        await apiApproveUser(uid);
+        await loadUsers(usersFilter);
+        render();
+    } catch (e) { alert('Error: ' + e.message); }
+}
+
+async function rejectUser(uid, username) {
+    if (!confirm(`Rechazar usuario "${username}"?`)) return;
+    try {
+        await apiRejectUser(uid);
+        await loadUsers(usersFilter);
+        render();
+    } catch (e) { alert('Error: ' + e.message); }
+}
+
+async function deleteUser(uid, username) {
+    if (!confirm(`ELIMINAR usuario "${username}"? Esta accion no se puede deshacer.`)) return;
+    try {
+        await apiDeleteUser(uid);
+        await loadUsers(usersFilter);
+        render();
+    } catch (e) { alert('Error: ' + e.message); }
+}
+
+async function resetPassword(uid, username) {
+    const newPass = prompt(`Nueva contrasena para "${username}" (min 6 caracteres):`);
+    if (!newPass) return;
+    if (newPass.length < 6) return alert('La contrasena debe tener al menos 6 caracteres');
+    try {
+        await apiResetPassword(uid, newPass);
+        alert(`Contrasena de ${username} actualizada`);
+        await loadUsers(usersFilter);
+        render();
+    } catch (e) { alert('Error: ' + e.message); }
+}
+
+// --- Video Actions ---
 
 let selectedFile = null;
 
@@ -263,6 +430,7 @@ async function handleUpload() {
     formData.append('video', selectedFile);
     formData.append('title', title);
     formData.append('description', document.getElementById('upload-desc').value);
+    formData.append('rating', document.getElementById('upload-rating').value);
     const tagIds = [...document.querySelectorAll('.upload-tag:checked')].map(c => parseInt(c.value));
     formData.append('tags', JSON.stringify(tagIds));
 
@@ -295,10 +463,11 @@ async function startEdit(uid) {
 async function saveEdit() {
     const title = document.getElementById('edit-title').value;
     const description = document.getElementById('edit-desc').value;
+    const rating = parseFloat(document.getElementById('edit-rating').value) || 0;
     const tagIds = [...document.querySelectorAll('.edit-tag:checked')].map(c => parseInt(c.value));
 
     try {
-        await apiUpdateVideo(editingVideo.uid, { title, description, tags: tagIds });
+        await apiUpdateVideo(editingVideo.uid, { title, description, rating, tags: tagIds });
         alert('Video actualizado');
         await loadData();
         navigateTo('dashboard');
@@ -372,7 +541,6 @@ async function drop(e) {
     if (dragItem) dragItem.classList.remove('dragging');
     dragItem = null;
 
-    // Save new order
     const rows = document.querySelectorAll('.video-row');
     const order = [...rows].map((row, i) => ({ uid: row.dataset.uid, sortOrder: i }));
     try {
@@ -383,8 +551,11 @@ async function drop(e) {
     }
 }
 
-function navigateTo(screen) {
+async function navigateTo(screen) {
     currentScreen = screen;
+    if (screen === 'users') {
+        await loadUsers(usersFilter);
+    }
     render();
 }
 

@@ -69,6 +69,34 @@ async function apiDeleteTag(id) {
     return await apiCall('/tags/' + id, { method: 'DELETE' });
 }
 
+async function apiGetUsers(params = {}) {
+    const qs = new URLSearchParams(params).toString();
+    return await apiCall('/users' + (qs ? '?' + qs : ''));
+}
+
+async function apiApproveUser(uid) {
+    return await apiCall('/users/' + uid + '/approve', { method: 'PUT' });
+}
+
+async function apiRejectUser(uid) {
+    return await apiCall('/users/' + uid + '/reject', { method: 'PUT' });
+}
+
+async function apiDeleteUser(uid) {
+    return await apiCall('/users/' + uid, { method: 'DELETE' });
+}
+
+async function apiGetResetRequests() {
+    return await apiCall('/users/reset-requests');
+}
+
+async function apiResetPassword(uid, password) {
+    return await apiCall('/users/' + uid + '/reset-password', {
+        method: 'PUT',
+        body: JSON.stringify({ password })
+    });
+}
+
 function logout() {
     authToken = null;
     localStorage.removeItem('sesamotv_admin_token');

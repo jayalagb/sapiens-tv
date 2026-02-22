@@ -23,6 +23,7 @@ CREATE TABLE IF NOT EXISTS videos (
     video_url VARCHAR(500) NOT NULL,
     thumbnail_url VARCHAR(500),
     duration INTEGER,
+    rating DECIMAL(2,1) DEFAULT 0,
     sort_order INTEGER DEFAULT 0,
     views_count INTEGER DEFAULT 0,
     uploaded_by INTEGER REFERENCES admins(id),
@@ -36,6 +37,18 @@ CREATE TABLE IF NOT EXISTS video_tags (
     PRIMARY KEY (video_id, tag_id)
 );
 
+CREATE TABLE IF NOT EXISTS video_ratings (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    video_id INTEGER NOT NULL REFERENCES videos(id) ON DELETE CASCADE,
+    rating DECIMAL(2,1) NOT NULL CHECK (rating >= 0 AND rating <= 5),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(user_id, video_id)
+);
+
 CREATE INDEX IF NOT EXISTS idx_videos_sort_order ON videos(sort_order);
 CREATE INDEX IF NOT EXISTS idx_videos_created_at ON videos(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_videos_rating ON videos(rating DESC);
 CREATE INDEX IF NOT EXISTS idx_tags_name ON tags(name);
+CREATE INDEX IF NOT EXISTS idx_video_ratings_video ON video_ratings(video_id);
+CREATE INDEX IF NOT EXISTS idx_video_ratings_user ON video_ratings(user_id);

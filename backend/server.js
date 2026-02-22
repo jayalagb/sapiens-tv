@@ -6,6 +6,8 @@ const path = require('path');
 require('dotenv').config();
 
 const authRoutes = require('./routes/auth');
+const userAuthRoutes = require('./routes/userAuth');
+const usersRoutes = require('./routes/users');
 const videoRoutes = require('./routes/videos');
 const tagRoutes = require('./routes/tags');
 
@@ -34,6 +36,8 @@ app.use(express.static(path.join(__dirname, '..', 'public')));
 
 // API routes
 app.use('/api/auth', authRoutes);
+app.use('/api/user-auth', userAuthRoutes);
+app.use('/api/users', usersRoutes);
 app.use('/api/videos', videoRoutes);
 app.use('/api/tags', tagRoutes);
 

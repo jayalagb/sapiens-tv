@@ -4,7 +4,7 @@ const path = require('path');
 const fs = require('fs');
 const { v4: uuidv4 } = require('uuid');
 const { query } = require('../config/database');
-const { authenticateToken } = require('../middleware/auth');
+const { authenticateToken, requireApprovedUser } = require('../middleware/auth');
 
 const router = express.Router();
 
@@ -35,42 +35,49 @@ const upload = multer({
     }
 });
 
-// GET /api/videos - List videos (public)
-router.get('/', async (req, res) => {
+// GET /api/videos - List videos (requires approved user)
+router.get('/', requireApprovedUser, async (req, res) => {
     try {
         const { tag, search, limit = 50, offset = 0 } = req.query;
         let sql, params;
 
         if (tag) {
             sql = `SELECT v.id, v.uid, v.title, v.description, v.video_url, v.thumbnail_url,
-                          v.duration, v.views_count, v.sort_order, v.created_at
+                          v.duration, v.views_count, v.sort_order, v.rating, v.created_at
                    FROM videos v
                    JOIN video_tags vt ON v.id = vt.video_id
                    JOIN tags t ON vt.tag_id = t.id
                    WHERE t.name = $1
-                   ORDER BY v.sort_order, v.created_at DESC
+                   ORDER BY v.rating DESC, v.created_at DESC
                    LIMIT $2 OFFSET $3`;
             params = [tag.toLowerCase(), limit, offset];
         } else if (search) {
             sql = `SELECT id, uid, title, description, video_url, thumbnail_url,
-                          duration, views_count, sort_order, created_at
+                          duration, views_count, sort_order, rating, created_at
                    FROM videos
                    WHERE title ILIKE $1 OR description ILIKE $1
-                   ORDER BY sort_order, created_at DESC
+                   ORDER BY rating DESC, created_at DESC
                    LIMIT $2 OFFSET $3`;
             params = [`%${search}%`, limit, offset];
         } else {
             sql = `SELECT id, uid, title, description, video_url, thumbnail_url,
-                          duration, views_count, sort_order, created_at
+                          duration, views_count, sort_order, rating, created_at
                    FROM videos
-                   ORDER BY sort_order, created_at DESC
+                   ORDER BY rating DESC, created_at DESC
                    LIMIT $1 OFFSET $2`;
             params = [limit, offset];
         }
 
         const result = await query(sql, params);
 
-        // Get tags for each video
+        // Get user id for rating lookup (only for user tokens, not admin)
+        let userId = null;
+        if (req.user) {
+            const userResult = await query('SELECT id FROM users WHERE uid = $1', [req.user.uid]);
+            if (userResult.rows.length > 0) userId = userResult.rows[0].id;
+        }
+
+        // Get tags and user rating for each video
         const videos = await Promise.all(result.rows.map(async (video) => {
             const tagsResult = await query(
                 `SELECT t.id, t.name FROM tags t
@@ -78,6 +85,16 @@ router.get('/', async (req, res) => {
                  WHERE vt.video_id = $1`,
                 [video.id]
             );
+
+            let userRating = null;
+            if (userId) {
+                const ur = await query(
+                    'SELECT rating FROM video_ratings WHERE user_id = $1 AND video_id = $2',
+                    [userId, video.id]
+                );
+                if (ur.rows.length > 0) userRating = parseFloat(ur.rows[0].rating);
+            }
+
             return {
                 uid: video.uid,
                 title: video.title,
@@ -87,6 +104,8 @@ router.get('/', async (req, res) => {
                 duration: video.duration,
                 views: video.views_count,
                 sortOrder: video.sort_order,
+                rating: parseFloat(video.rating) || 0,
+                userRating,
                 tags: tagsResult.rows,
                 createdAt: video.created_at
             };
@@ -99,12 +118,12 @@ router.get('/', async (req, res) => {
     }
 });
 
-// GET /api/videos/:uid - Get single video (public)
-router.get('/:uid', async (req, res) => {
+// GET /api/videos/:uid - Get single video (requires approved user)
+router.get('/:uid', requireApprovedUser, async (req, res) => {
     try {
         const result = await query(
             `SELECT id, uid, title, description, video_url, thumbnail_url,
-                    duration, views_count, sort_order, created_at
+                    duration, views_count, sort_order, rating, created_at
              FROM videos WHERE uid = $1`,
             [req.params.uid]
         );
@@ -121,6 +140,19 @@ router.get('/:uid', async (req, res) => {
             [video.id]
         );
 
+        // Get user's own rating if authenticated as user
+        let userRating = null;
+        if (req.user) {
+            const userResult = await query('SELECT id FROM users WHERE uid = $1', [req.user.uid]);
+            if (userResult.rows.length > 0) {
+                const ur = await query(
+                    'SELECT rating FROM video_ratings WHERE user_id = $1 AND video_id = $2',
+                    [userResult.rows[0].id, video.id]
+                );
+                if (ur.rows.length > 0) userRating = parseFloat(ur.rows[0].rating);
+            }
+        }
+
         res.json({
             uid: video.uid,
             title: video.title,
@@ -130,6 +162,8 @@ router.get('/:uid', async (req, res) => {
             duration: video.duration,
             views: video.views_count,
             sortOrder: video.sort_order,
+            rating: parseFloat(video.rating) || 0,
+            userRating,
             tags: tagsResult.rows,
             createdAt: video.created_at
         });
@@ -139,8 +173,8 @@ router.get('/:uid', async (req, res) => {
     }
 });
 
-// GET /api/videos/:uid/stream - Stream video with range support (public)
-router.get('/:uid/stream', async (req, res) => {
+// GET /api/videos/:uid/stream - Stream video (requires approved user, accepts ?token= for <video src>)
+router.get('/:uid/stream', requireApprovedUser, async (req, res) => {
     try {
         const result = await query('SELECT video_url FROM videos WHERE uid = $1', [req.params.uid]);
         if (result.rows.length === 0) {
@@ -186,8 +220,54 @@ router.get('/:uid/stream', async (req, res) => {
     }
 });
 
-// POST /api/videos/:uid/view - Increment view count (public)
-router.post('/:uid/view', async (req, res) => {
+// POST /api/videos/:uid/rate - Rate a video (requires approved user)
+router.post('/:uid/rate', requireApprovedUser, async (req, res) => {
+    try {
+        const { rating } = req.body;
+        const ratingVal = parseFloat(rating);
+        if (isNaN(ratingVal) || ratingVal < 0 || ratingVal > 5) {
+            return res.status(400).json({ error: 'Rating debe ser entre 0 y 5' });
+        }
+
+        // Get video id
+        const videoResult = await query('SELECT id FROM videos WHERE uid = $1', [req.params.uid]);
+        if (videoResult.rows.length === 0) {
+            return res.status(404).json({ error: 'Video no encontrado' });
+        }
+        const videoId = videoResult.rows[0].id;
+
+        // Get user id from DB (req.user has uid from JWT)
+        const userResult = await query('SELECT id FROM users WHERE uid = $1', [req.user.uid]);
+        if (userResult.rows.length === 0) {
+            return res.status(403).json({ error: 'Usuario no encontrado' });
+        }
+        const userId = userResult.rows[0].id;
+
+        // Upsert user rating
+        await query(
+            `INSERT INTO video_ratings (user_id, video_id, rating)
+             VALUES ($1, $2, $3)
+             ON CONFLICT (user_id, video_id) DO UPDATE SET rating = $3`,
+            [userId, videoId, ratingVal]
+        );
+
+        // Recalculate average and update videos.rating
+        const avgResult = await query(
+            'SELECT COALESCE(AVG(rating), 0) as avg_rating FROM video_ratings WHERE video_id = $1',
+            [videoId]
+        );
+        const avgRating = parseFloat(parseFloat(avgResult.rows[0].avg_rating).toFixed(1));
+        await query('UPDATE videos SET rating = $1 WHERE id = $2', [avgRating, videoId]);
+
+        res.json({ rating: avgRating, userRating: ratingVal });
+    } catch (error) {
+        console.error('Rate video error:', error);
+        res.status(500).json({ error: 'Error al puntuar video' });
+    }
+});
+
+// POST /api/videos/:uid/view - Increment view count (requires approved user)
+router.post('/:uid/view', requireApprovedUser, async (req, res) => {
     try {
         await query('UPDATE videos SET views_count = views_count + 1 WHERE uid = $1', [req.params.uid]);
         res.json({ message: 'ok' });
@@ -203,23 +283,24 @@ router.post('/', authenticateToken, upload.single('video'), async (req, res) => 
             return res.status(400).json({ error: 'Video requerido' });
         }
 
-        const { title, description, tags } = req.body;
+        const { title, description, tags, rating } = req.body;
         if (!title) {
             return res.status(400).json({ error: 'Titulo requerido' });
         }
 
         const uid = uuidv4();
         const videoUrl = `/uploads/videos/${req.file.filename}`;
+        const videoRating = Math.min(5, Math.max(0, parseFloat(rating) || 0));
 
         // Get max sort_order
         const maxOrder = await query('SELECT COALESCE(MAX(sort_order), 0) + 1 as next_order FROM videos');
         const sortOrder = maxOrder.rows[0].next_order;
 
         const result = await query(
-            `INSERT INTO videos (uid, title, description, video_url, sort_order, uploaded_by)
-             VALUES ($1, $2, $3, $4, $5, $6)
-             RETURNING id, uid, title, description, video_url, sort_order, created_at`,
-            [uid, title, description || '', videoUrl, sortOrder, req.admin.id]
+            `INSERT INTO videos (uid, title, description, video_url, sort_order, rating, uploaded_by)
+             VALUES ($1, $2, $3, $4, $5, $6, $7)
+             RETURNING id, uid, title, description, video_url, sort_order, rating, created_at`,
+            [uid, title, description || '', videoUrl, sortOrder, videoRating, req.admin.id]
         );
 
         const video = result.rows[0];
@@ -238,6 +319,7 @@ router.post('/', authenticateToken, upload.single('video'), async (req, res) => 
             description: video.description,
             videoUrl: video.video_url,
             sortOrder: video.sort_order,
+            rating: parseFloat(video.rating) || 0,
             createdAt: video.created_at
         });
     } catch (error) {
@@ -268,16 +350,18 @@ router.put('/reorder', authenticateToken, async (req, res) => {
 // PUT /api/videos/:uid - Edit video (admin)
 router.put('/:uid', authenticateToken, async (req, res) => {
     try {
-        const { title, description, tags } = req.body;
+        const { title, description, tags, rating } = req.body;
+        const videoRating = rating !== undefined ? Math.min(5, Math.max(0, parseFloat(rating) || 0)) : undefined;
 
         const result = await query(
             `UPDATE videos SET
                 title = COALESCE($1, title),
                 description = COALESCE($2, description),
+                rating = COALESCE($4, rating),
                 updated_at = CURRENT_TIMESTAMP
              WHERE uid = $3
-             RETURNING id, uid, title, description, video_url, sort_order`,
-            [title, description, req.params.uid]
+             RETURNING id, uid, title, description, video_url, sort_order, rating`,
+            [title, description, req.params.uid, videoRating]
         );
 
         if (result.rows.length === 0) {

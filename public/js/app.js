@@ -1,4 +1,5 @@
-let currentScreen = 'home';
+let currentScreen = 'landing';
+let currentUser = null;
 let videos = [];
 let tags = [];
 let selectedTag = null;
@@ -6,48 +7,245 @@ let searchQuery = '';
 let currentVideo = null;
 
 async function init() {
-    await loadTags();
-    await loadVideos();
+    if (getUserToken()) {
+        try {
+            currentUser = await apiGetMe();
+            if (currentUser.status === 'approved') {
+                currentScreen = 'home';
+                await loadTags();
+                await loadVideos();
+            } else {
+                localStorage.removeItem('sesamotv_user_token');
+                currentScreen = 'landing';
+            }
+        } catch (e) {
+            localStorage.removeItem('sesamotv_user_token');
+            currentScreen = 'landing';
+        }
+    }
     render();
 }
 
 async function loadTags() {
-    try {
-        tags = await apiGetTags();
-    } catch (e) {
-        console.error('Error loading tags:', e);
-        tags = [];
-    }
+    try { tags = await apiGetTags(); } catch (e) { tags = []; }
 }
 
 async function loadVideos(params = {}) {
-    try {
-        videos = await apiGetVideos(params);
-    } catch (e) {
-        console.error('Error loading videos:', e);
-        videos = [];
-    }
+    try { videos = await apiGetVideos(params); } catch (e) { videos = []; }
 }
 
 function render() {
     const app = document.getElementById('app');
-    if (currentScreen === 'player' && currentVideo) {
-        app.innerHTML = renderPlayer();
-    } else {
-        app.innerHTML = renderHome();
+    switch (currentScreen) {
+        case 'landing': app.innerHTML = renderLanding(); break;
+        case 'login': app.innerHTML = renderLoginScreen(); break;
+        case 'register': app.innerHTML = renderRegisterScreen(); break;
+        case 'reset': app.innerHTML = renderResetScreen(); break;
+        case 'player': app.innerHTML = renderPlayer(); break;
+        default: app.innerHTML = renderHome(); break;
     }
 }
+
+// --- Landing ---
+
+function renderLanding() {
+    return `
+        <div class="landing">
+            <div class="landing-hero">
+                <h1 class="landing-logo">SesamoTV</h1>
+                <p class="landing-tagline">Tu plataforma de videos</p>
+                <div class="landing-actions">
+                    <button class="btn btn-landing-primary" onclick="navigateTo('login')">Iniciar Sesion</button>
+                    <button class="btn btn-landing-secondary" onclick="navigateTo('register')">Crear Cuenta</button>
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+// --- Login ---
+
+function renderLoginScreen() {
+    return `
+        <div class="auth-screen">
+            <div class="auth-box">
+                <h2 class="auth-title">Iniciar Sesion</h2>
+                <div id="auth-error" class="auth-msg error" style="display:none"></div>
+                <input type="text" id="login-user" class="auth-input" placeholder="Usuario o email">
+                <input type="password" id="login-pass" class="auth-input" placeholder="Contrasena"
+                       onkeydown="if(event.key==='Enter')handleLogin()">
+                <button class="btn btn-primary btn-full" onclick="handleLogin()" id="login-btn">Entrar</button>
+                <p class="auth-link"><a href="#" onclick="navigateTo('reset');return false">Olvidaste tu contrasena?</a></p>
+                <p class="auth-link">No tienes cuenta? <a href="#" onclick="navigateTo('register');return false">Registrate</a></p>
+                <p class="auth-link"><a href="#" onclick="navigateTo('landing');return false">Volver</a></p>
+            </div>
+        </div>
+    `;
+}
+
+async function handleLogin() {
+    const username = document.getElementById('login-user').value.trim();
+    const password = document.getElementById('login-pass').value;
+    const errEl = document.getElementById('auth-error');
+
+    if (!username || !password) {
+        errEl.textContent = 'Completa todos los campos';
+        errEl.style.display = 'block';
+        return;
+    }
+
+    const btn = document.getElementById('login-btn');
+    btn.disabled = true;
+    btn.textContent = 'Entrando...';
+
+    try {
+        const data = await apiUserLogin(username, password);
+        localStorage.setItem('sesamotv_user_token', data.token);
+        currentUser = data.user;
+        currentScreen = 'home';
+        await loadTags();
+        await loadVideos();
+        render();
+    } catch (e) {
+        errEl.textContent = e.message;
+        errEl.style.display = 'block';
+        btn.disabled = false;
+        btn.textContent = 'Entrar';
+    }
+}
+
+// --- Register ---
+
+function renderRegisterScreen() {
+    return `
+        <div class="auth-screen">
+            <div class="auth-box">
+                <h2 class="auth-title">Crear Cuenta</h2>
+                <div id="auth-error" class="auth-msg error" style="display:none"></div>
+                <div id="auth-success" class="auth-msg success" style="display:none"></div>
+                <input type="text" id="reg-user" class="auth-input" placeholder="Nombre de usuario">
+                <input type="email" id="reg-email" class="auth-input" placeholder="Email">
+                <input type="password" id="reg-pass" class="auth-input" placeholder="Contrasena (min 6 caracteres)">
+                <button class="btn btn-primary btn-full" onclick="handleRegister()" id="reg-btn">Registrarse</button>
+                <p class="auth-link">Ya tienes cuenta? <a href="#" onclick="navigateTo('login');return false">Inicia sesion</a></p>
+                <p class="auth-link"><a href="#" onclick="navigateTo('landing');return false">Volver</a></p>
+            </div>
+        </div>
+    `;
+}
+
+async function handleRegister() {
+    const username = document.getElementById('reg-user').value.trim();
+    const email = document.getElementById('reg-email').value.trim();
+    const password = document.getElementById('reg-pass').value;
+    const errEl = document.getElementById('auth-error');
+    const successEl = document.getElementById('auth-success');
+
+    errEl.style.display = 'none';
+    successEl.style.display = 'none';
+
+    if (!username || !email || !password) {
+        errEl.textContent = 'Completa todos los campos';
+        errEl.style.display = 'block';
+        return;
+    }
+
+    if (password.length < 6) {
+        errEl.textContent = 'La contrasena debe tener al menos 6 caracteres';
+        errEl.style.display = 'block';
+        return;
+    }
+
+    const btn = document.getElementById('reg-btn');
+    btn.disabled = true;
+    btn.textContent = 'Registrando...';
+
+    try {
+        const data = await apiUserRegister(username, email, password);
+        successEl.textContent = data.message;
+        successEl.style.display = 'block';
+        document.getElementById('reg-user').value = '';
+        document.getElementById('reg-email').value = '';
+        document.getElementById('reg-pass').value = '';
+        btn.textContent = 'Registrarse';
+        btn.disabled = false;
+        setTimeout(() => navigateTo('login'), 3000);
+    } catch (e) {
+        errEl.textContent = e.message;
+        errEl.style.display = 'block';
+        btn.disabled = false;
+        btn.textContent = 'Registrarse';
+    }
+}
+
+// --- Reset Password ---
+
+function renderResetScreen() {
+    return `
+        <div class="auth-screen">
+            <div class="auth-box">
+                <h2 class="auth-title">Recuperar Contrasena</h2>
+                <p class="auth-subtitle">Introduce tu email y enviaremos una solicitud al administrador para resetear tu contrasena.</p>
+                <div id="auth-error" class="auth-msg error" style="display:none"></div>
+                <div id="auth-success" class="auth-msg success" style="display:none"></div>
+                <input type="email" id="reset-email" class="auth-input" placeholder="Tu email"
+                       onkeydown="if(event.key==='Enter')handleResetRequest()">
+                <button class="btn btn-primary btn-full" onclick="handleResetRequest()" id="reset-btn">Enviar Solicitud</button>
+                <p class="auth-link"><a href="#" onclick="navigateTo('login');return false">Volver al login</a></p>
+            </div>
+        </div>
+    `;
+}
+
+async function handleResetRequest() {
+    const email = document.getElementById('reset-email').value.trim();
+    const errEl = document.getElementById('auth-error');
+    const successEl = document.getElementById('auth-success');
+
+    errEl.style.display = 'none';
+    successEl.style.display = 'none';
+
+    if (!email) {
+        errEl.textContent = 'Introduce tu email';
+        errEl.style.display = 'block';
+        return;
+    }
+
+    const btn = document.getElementById('reset-btn');
+    btn.disabled = true;
+    btn.textContent = 'Enviando...';
+
+    try {
+        const data = await apiRequestReset(email);
+        successEl.textContent = data.message;
+        successEl.style.display = 'block';
+        document.getElementById('reset-email').value = '';
+        btn.textContent = 'Enviar Solicitud';
+        btn.disabled = false;
+    } catch (e) {
+        errEl.textContent = e.message;
+        errEl.style.display = 'block';
+        btn.disabled = false;
+        btn.textContent = 'Enviar Solicitud';
+    }
+}
+
+// --- Home ---
 
 function renderHome() {
     return `
         <div class="container">
             <header class="header">
                 <h1 class="logo">SesamoTV</h1>
+                <div class="header-right">
+                    <span class="user-name">${escapeHtml(currentUser?.username || '')}</span>
+                    <button class="btn btn-sm btn-outline" onclick="handleLogout()">Salir</button>
+                </div>
             </header>
 
             <div class="search-bar">
                 <input type="text" id="search-input" placeholder="Buscar videos..."
-                       value="${searchQuery}" oninput="handleSearch(this.value)">
+                       value="${escapeHtml(searchQuery)}" oninput="handleSearch(this.value)">
             </div>
 
             <div class="tags-bar">
@@ -73,6 +271,7 @@ function renderHome() {
                                 <span>${v.views || 0} vistas</span>
                                 <span>${timeAgo(v.createdAt)}</span>
                             </div>
+                            ${renderStars(v.rating || 0)}
                             <div class="video-tags">
                                 ${(v.tags || []).map(t => `<span class="tag-badge">${t.name}</span>`).join('')}
                             </div>
@@ -84,13 +283,20 @@ function renderHome() {
     `;
 }
 
+// --- Player ---
+
 function renderPlayer() {
     const v = currentVideo;
+    if (!v) return renderHome();
     return `
         <div class="container">
             <header class="header">
                 <button class="back-btn" onclick="goHome()">&#8592; Volver</button>
                 <h1 class="logo">SesamoTV</h1>
+                <div class="header-right">
+                    <span class="user-name">${escapeHtml(currentUser?.username || '')}</span>
+                    <button class="btn btn-sm btn-outline" onclick="handleLogout()">Salir</button>
+                </div>
             </header>
 
             <div class="player-wrapper">
@@ -105,6 +311,16 @@ function renderPlayer() {
                 <div class="video-meta">
                     <span>${v.views || 0} vistas</span>
                     <span>${timeAgo(v.createdAt)}</span>
+                </div>
+                <div class="player-rating-section">
+                    <div class="rating-avg">
+                        ${renderStars(v.rating || 0, 'lg')}
+                        <span class="rating-avg-label">${(v.rating || 0).toFixed(1)} promedio</span>
+                    </div>
+                    <div class="rating-user">
+                        <span class="rating-user-label">Tu puntuacion:</span>
+                        ${renderInteractiveStars(v.uid, v.userRating)}
+                    </div>
                 </div>
                 ${v.description ? `<p class="video-description">${escapeHtml(v.description)}</p>` : ''}
                 <div class="video-tags">
@@ -134,6 +350,52 @@ function renderPlayer() {
         </div>
     `;
 }
+
+// --- Stars ---
+
+function renderStars(rating, size = 'sm') {
+    const full = Math.floor(rating);
+    const half = rating % 1 >= 0.5 ? 1 : 0;
+    const empty = 5 - full - half;
+    let html = `<div class="video-rating rating-${size}">`;
+    for (let i = 0; i < full; i++) html += '<span class="star full">&#9733;</span>';
+    if (half) html += '<span class="star half">&#9733;</span>';
+    for (let i = 0; i < empty; i++) html += '<span class="star empty">&#9733;</span>';
+    html += '</div>';
+    return html;
+}
+
+function renderInteractiveStars(videoUid, userRating) {
+    let html = '<div class="video-rating rating-lg rating-interactive">';
+    for (let i = 1; i <= 5; i++) {
+        const cls = userRating !== null && i <= userRating ? 'full' : 'empty';
+        html += `<span class="star ${cls}" onclick="rateVideo('${videoUid}', ${i})" data-star="${i}">&#9733;</span>`;
+    }
+    html += '</div>';
+    return html;
+}
+
+async function rateVideo(uid, rating) {
+    try {
+        const data = await apiRateVideo(uid, rating);
+        // Update currentVideo with new values
+        if (currentVideo && currentVideo.uid === uid) {
+            currentVideo.rating = data.rating;
+            currentVideo.userRating = data.userRating;
+        }
+        // Update in videos list too
+        const idx = videos.findIndex(v => v.uid === uid);
+        if (idx !== -1) {
+            videos[idx].rating = data.rating;
+            videos[idx].userRating = data.userRating;
+        }
+        render();
+    } catch (e) {
+        console.error('Error rating video:', e);
+    }
+}
+
+// --- Actions ---
 
 async function openVideo(uid) {
     try {
@@ -167,6 +429,20 @@ async function filterByTag(tagName) {
     selectedTag = tagName;
     searchQuery = '';
     await loadVideos(tagName ? { tag: tagName } : {});
+    render();
+}
+
+function handleLogout() {
+    localStorage.removeItem('sesamotv_user_token');
+    currentUser = null;
+    videos = [];
+    tags = [];
+    currentScreen = 'landing';
+    render();
+}
+
+function navigateTo(screen) {
+    currentScreen = screen;
     render();
 }
 
