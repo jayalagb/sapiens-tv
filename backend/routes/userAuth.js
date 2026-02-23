@@ -1,7 +1,7 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
 const { query } = require('../config/database');
-const { generateUserToken, verifyToken } = require('../middleware/auth');
+const { generateUserToken, verifyUserToken } = require('../middleware/auth');
 const validatePassword = require('../utils/validatePassword');
 
 const router = express.Router();
@@ -115,7 +115,7 @@ router.get('/me', async (req, res) => {
     if (!token) return res.status(401).json({ error: 'Token requerido' });
 
     try {
-        const decoded = verifyToken(token);
+        const decoded = verifyUserToken(token);
         const result = await query(
             'SELECT uid, username, email, status, created_at FROM users WHERE uid = $1',
             [decoded.uid]

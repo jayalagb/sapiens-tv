@@ -5,7 +5,7 @@ const fs = require('fs');
 const os = require('os');
 const { v4: uuidv4 } = require('uuid');
 const { query } = require('../config/database');
-const { authenticateToken, requireApprovedUser, generateStreamToken, verifyToken } = require('../middleware/auth');
+const { authenticateToken, requireApprovedUser, generateStreamToken, verifyStreamToken } = require('../middleware/auth');
 const { uploadBlob, getBlobProperties, downloadBlobStream, deleteBlob } = require('../config/blobStorage');
 
 const router = express.Router();
@@ -202,12 +202,12 @@ router.get('/:uid/stream', async (req, res) => {
 
         let decoded;
         try {
-            decoded = verifyToken(stoken);
+            decoded = verifyStreamToken(stoken);
         } catch (err) {
             return res.status(403).json({ error: 'Stream token invalido o expirado' });
         }
 
-        if (decoded.purpose !== 'stream' || decoded.videoUid !== req.params.uid) {
+        if (decoded.videoUid !== req.params.uid) {
             return res.status(403).json({ error: 'Stream token invalido para este video' });
         }
 

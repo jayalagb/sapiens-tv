@@ -31,13 +31,28 @@ function generateStreamToken(payload, videoUid) {
     );
 }
 
-function verifyToken(token) {
-    // Try admin/stream secret first, then user secret
-    try {
-        return jwt.verify(token, JWT_SECRET);
-    } catch (err) {
-        return jwt.verify(token, JWT_SECRET_USER);
+function verifyAdminToken(token) {
+    const decoded = jwt.verify(token, JWT_SECRET);
+    if (decoded.type !== 'admin') {
+        throw new Error('Not an admin token');
     }
+    return decoded;
+}
+
+function verifyUserToken(token) {
+    const decoded = jwt.verify(token, JWT_SECRET_USER);
+    if (decoded.type !== 'user') {
+        throw new Error('Not a user token');
+    }
+    return decoded;
+}
+
+function verifyStreamToken(token) {
+    const decoded = jwt.verify(token, JWT_SECRET);
+    if (decoded.purpose !== 'stream') {
+        throw new Error('Not a stream token');
+    }
+    return decoded;
 }
 
 function authenticateToken(req, res, next) {
@@ -49,11 +64,7 @@ function authenticateToken(req, res, next) {
     }
 
     try {
-        const decoded = verifyToken(token);
-        if (decoded.type !== 'admin') {
-            return res.status(403).json({ error: 'Acceso denegado' });
-        }
-        req.admin = decoded;
+        req.admin = verifyAdminToken(token);
         next();
     } catch (err) {
         return res.status(403).json({ error: 'Token invalido' });
@@ -68,17 +79,16 @@ async function requireApprovedUser(req, res, next) {
         return res.status(401).json({ error: 'Token requerido' });
     }
 
+    // Try admin token first
     try {
-        const decoded = verifyToken(token);
+        req.admin = verifyAdminToken(token);
+        return next();
+    } catch (err) {
+        // Not an admin token, try user token
+    }
 
-        if (decoded.type === 'admin') {
-            req.admin = decoded;
-            return next();
-        }
-
-        if (decoded.type !== 'user') {
-            return res.status(403).json({ error: 'Token invalido' });
-        }
+    try {
+        const decoded = verifyUserToken(token);
 
         const result = await query(
             'SELECT id, uid, username, status FROM users WHERE uid = $1',
@@ -100,4 +110,4 @@ async function requireApprovedUser(req, res, next) {
     }
 }
 
-module.exports = { generateToken, authenticateToken, generateUserToken, generateStreamToken, verifyToken, requireApprovedUser };
+module.exports = { generateToken, authenticateToken, generateUserToken, generateStreamToken, verifyAdminToken, verifyUserToken, verifyStreamToken, requireApprovedUser };
