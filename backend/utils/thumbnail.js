@@ -1,11 +1,16 @@
 const ffmpeg = require('fluent-ffmpeg');
-const ffmpegPath = require('@ffmpeg-installer/ffmpeg').path;
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
 const { v4: uuidv4 } = require('uuid');
 
-ffmpeg.setFfmpegPath(ffmpegPath);
+// Use @ffmpeg-installer binary if available, otherwise assume ffmpeg is in PATH
+try {
+    const ffmpegPath = require('@ffmpeg-installer/ffmpeg').path;
+    ffmpeg.setFfmpegPath(ffmpegPath);
+} catch (e) {
+    // ffmpeg-installer not available, rely on system ffmpeg
+}
 
 /**
  * Generate a thumbnail from a video file.
