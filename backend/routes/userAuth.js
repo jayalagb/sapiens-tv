@@ -2,6 +2,7 @@ const express = require('express');
 const bcrypt = require('bcryptjs');
 const { query } = require('../config/database');
 const { generateUserToken, verifyToken } = require('../middleware/auth');
+const validatePassword = require('../utils/validatePassword');
 
 const router = express.Router();
 
@@ -14,8 +15,9 @@ router.post('/register', async (req, res) => {
             return res.status(400).json({ error: 'Todos los campos son requeridos' });
         }
 
-        if (password.length < 6) {
-            return res.status(400).json({ error: 'La contrasena debe tener al menos 6 caracteres' });
+        const passwordError = validatePassword(password);
+        if (passwordError) {
+            return res.status(400).json({ error: passwordError });
         }
 
         const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;

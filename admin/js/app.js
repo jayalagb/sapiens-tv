@@ -385,9 +385,9 @@ async function deleteUser(uid, username) {
 }
 
 async function resetPassword(uid, username) {
-    const newPass = prompt(`Nueva contrasena para "${username}" (min 6 caracteres):`);
+    const newPass = prompt(`Nueva contrasena para "${username}" (min 8, mayuscula, minuscula, numero):`);
     if (!newPass) return;
-    if (newPass.length < 6) return alert('La contrasena debe tener al menos 6 caracteres');
+    if (newPass.length < 8 || !/[a-z]/.test(newPass) || !/[A-Z]/.test(newPass) || !/[0-9]/.test(newPass)) return alert('La contrasena debe tener al menos 8 caracteres, con mayuscula, minuscula y numero');
     try {
         await apiResetPassword(uid, newPass);
         alert(`Contrasena de ${username} actualizada`);

@@ -2,6 +2,7 @@ const express = require('express');
 const bcrypt = require('bcryptjs');
 const { query } = require('../config/database');
 const { authenticateToken } = require('../middleware/auth');
+const validatePassword = require('../utils/validatePassword');
 
 const router = express.Router();
 
@@ -98,8 +99,9 @@ router.get('/reset-requests', async (req, res) => {
 router.put('/:uid/reset-password', async (req, res) => {
     try {
         const { password } = req.body;
-        if (!password || password.length < 6) {
-            return res.status(400).json({ error: 'Contrasena debe tener al menos 6 caracteres' });
+        const passwordError = validatePassword(password);
+        if (passwordError) {
+            return res.status(400).json({ error: passwordError });
         }
 
         const user = await query('SELECT id, username FROM users WHERE uid = $1', [req.params.uid]);
