@@ -3,6 +3,7 @@ const cors = require('cors');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const path = require('path');
+const fs = require('fs');
 require('dotenv').config();
 
 const { geoBlock } = require('./middleware/geoBlock');
@@ -90,9 +91,15 @@ app.use('/api/', (req, res, next) => {
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 
-// Static files
-app.use('/admin', express.static(path.join(__dirname, '..', 'admin')));
-app.use(express.static(path.join(__dirname, '..', 'public')));
+// Static files — resolve relative to parent in dev (repo layout) or same dir in Azure (flat deploy)
+const adminDir = fs.existsSync(path.join(__dirname, '..', 'admin'))
+    ? path.join(__dirname, '..', 'admin')
+    : path.join(__dirname, 'admin');
+const publicDir = fs.existsSync(path.join(__dirname, '..', 'public'))
+    ? path.join(__dirname, '..', 'public')
+    : path.join(__dirname, 'public');
+app.use('/admin', express.static(adminDir));
+app.use(express.static(publicDir));
 
 // Geo-blocking (solo permite acceso desde España en producción)
 app.use(geoBlock);
