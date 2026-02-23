@@ -22,10 +22,6 @@ jobs:
         run: npm ci
         working-directory: backend
 
-      - name: Verify ffmpeg binary
-        run: node -e "console.log(require('@ffmpeg-installer/ffmpeg').path)"
-        working-directory: backend
-
       - name: Deploy to Azure App Service
         uses: azure/webapps-deploy@v3
         with:
