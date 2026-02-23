@@ -16,6 +16,10 @@ const app = express();
 const PORT = process.env.PORT || 4000;
 
 // Security
+app.use((req, res, next) => {
+    res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+    next();
+});
 app.use(helmet({
     contentSecurityPolicy: {
         directives: {
@@ -68,6 +72,18 @@ const registerLimiter = rateLimit({
     windowMs: 15 * 60 * 1000,
     max: 5,
     message: { error: 'Demasiados registros. Intenta de nuevo mas tarde.' }
+});
+
+// CSRF protection: validate Origin on state-changing requests
+app.use('/api/', (req, res, next) => {
+    if (req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS') {
+        return next();
+    }
+    const origin = req.get('origin');
+    if (origin && !allowedOrigins.includes(origin)) {
+        return res.status(403).json({ error: 'Origen no permitido' });
+    }
+    next();
 });
 
 // Body parsing

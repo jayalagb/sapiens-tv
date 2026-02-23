@@ -31,10 +31,7 @@ router.post('/register', async (req, res) => {
         );
 
         if (existing.rows.length > 0) {
-            if (existing.rows[0].username === username.trim()) {
-                return res.status(400).json({ error: 'El nombre de usuario ya existe' });
-            }
-            return res.status(400).json({ error: 'El email ya esta registrado' });
+            return res.status(400).json({ error: 'El usuario o email ya esta registrado' });
         }
 
         const passwordHash = await bcrypt.hash(password, 10);

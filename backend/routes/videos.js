@@ -8,7 +8,15 @@ const { query } = require('../config/database');
 const { authenticateToken, requireApprovedUser, generateStreamToken, verifyStreamToken } = require('../middleware/auth');
 const { uploadBlob, getBlobProperties, downloadBlobStream, deleteBlob } = require('../config/blobStorage');
 
+const rateLimit = require('express-rate-limit');
+
 const router = express.Router();
+
+const videoActionLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 30,
+    message: { error: 'Demasiadas peticiones. Intenta de nuevo mas tarde.' }
+});
 
 // Multer config: upload to temp directory, then move to blob storage
 const storage = multer.diskStorage({
@@ -177,7 +185,7 @@ router.get('/:uid', requireApprovedUser, async (req, res) => {
 });
 
 // GET /api/videos/:uid/stream-token - Get a short-lived token for streaming
-router.get('/:uid/stream-token', requireApprovedUser, async (req, res) => {
+router.get('/:uid/stream-token', videoActionLimiter, requireApprovedUser, async (req, res) => {
     try {
         const result = await query('SELECT uid FROM videos WHERE uid = $1', [req.params.uid]);
         if (result.rows.length === 0) {
@@ -272,7 +280,7 @@ router.get('/:uid/stream', async (req, res) => {
 });
 
 // POST /api/videos/:uid/rate - Rate a video (requires approved user)
-router.post('/:uid/rate', requireApprovedUser, async (req, res) => {
+router.post('/:uid/rate', videoActionLimiter, requireApprovedUser, async (req, res) => {
     try {
         const { rating } = req.body;
         const ratingVal = parseFloat(rating);
@@ -318,7 +326,7 @@ router.post('/:uid/rate', requireApprovedUser, async (req, res) => {
 });
 
 // POST /api/videos/:uid/view - Increment view count (requires approved user)
-router.post('/:uid/view', requireApprovedUser, async (req, res) => {
+router.post('/:uid/view', videoActionLimiter, requireApprovedUser, async (req, res) => {
     try {
         await query('UPDATE videos SET views_count = views_count + 1 WHERE uid = $1', [req.params.uid]);
         res.json({ message: 'ok' });
@@ -374,8 +382,12 @@ router.post('/', authenticateToken, upload.single('video'), async (req, res) => 
         // Add tags if provided
         if (tags) {
             const tagIds = JSON.parse(tags);
-            for (const tagId of tagIds) {
-                await query('INSERT INTO video_tags (video_id, tag_id) VALUES ($1, $2) ON CONFLICT DO NOTHING', [video.id, tagId]);
+            if (tagIds.length > 0) {
+                const validTags = await query('SELECT id FROM tags WHERE id = ANY($1)', [tagIds]);
+                const validIds = validTags.rows.map(r => r.id);
+                for (const tagId of validIds) {
+                    await query('INSERT INTO video_tags (video_id, tag_id) VALUES ($1, $2) ON CONFLICT DO NOTHING', [video.id, tagId]);
+                }
             }
         }
 
@@ -454,8 +466,12 @@ router.put('/:uid', authenticateToken, async (req, res) => {
         if (tags !== undefined) {
             await query('DELETE FROM video_tags WHERE video_id = $1', [video.id]);
             const tagIds = Array.isArray(tags) ? tags : JSON.parse(tags);
-            for (const tagId of tagIds) {
-                await query('INSERT INTO video_tags (video_id, tag_id) VALUES ($1, $2) ON CONFLICT DO NOTHING', [video.id, tagId]);
+            if (tagIds.length > 0) {
+                const validTags = await query('SELECT id FROM tags WHERE id = ANY($1)', [tagIds]);
+                const validIds = validTags.rows.map(r => r.id);
+                for (const tagId of validIds) {
+                    await query('INSERT INTO video_tags (video_id, tag_id) VALUES ($1, $2) ON CONFLICT DO NOTHING', [video.id, tagId]);
+                }
             }
         }
 
