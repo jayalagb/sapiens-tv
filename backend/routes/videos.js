@@ -234,11 +234,18 @@ router.get('/:uid/stream', async (req, res) => {
 
         const range = req.headers.range;
         if (range) {
+            if (!/^bytes=\d+-\d*$/.test(range)) {
+                return res.status(416).json({ error: 'Range invalido' });
+            }
             const parts = range.replace(/bytes=/, '').split('-');
             const start = parseInt(parts[0], 10);
             const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
-            const chunkSize = end - start + 1;
 
+            if (start < 0 || start >= fileSize || end >= fileSize || start > end) {
+                return res.writeHead(416, { 'Content-Range': `bytes */${fileSize}` }).end();
+            }
+
+            const chunkSize = end - start + 1;
             const stream = await downloadBlobStream(blobName, start, chunkSize);
             res.writeHead(206, {
                 'Content-Range': `bytes ${start}-${end}/${fileSize}`,
