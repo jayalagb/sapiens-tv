@@ -10,7 +10,9 @@ router.use(authenticateToken);
 // GET /api/users
 router.get('/', async (req, res) => {
     try {
-        const { status, limit = 50, offset = 0 } = req.query;
+        const { status } = req.query;
+        const limit = Math.min(Math.max(parseInt(req.query.limit) || 50, 1), 100);
+        const offset = Math.max(parseInt(req.query.offset) || 0, 0);
 
         let sql = `
             SELECT u.uid, u.username, u.email, u.status,

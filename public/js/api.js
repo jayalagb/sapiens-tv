@@ -66,7 +66,7 @@ async function apiRateVideo(uid, rating) {
     });
 }
 
-function getStreamUrl(uid) {
-    const token = getUserToken();
-    return API_BASE + '/videos/' + uid + '/stream' + (token ? '?token=' + token : '');
+async function getStreamUrl(uid) {
+    const data = await apiCall('/videos/' + uid + '/stream-token');
+    return API_BASE + '/videos/' + uid + '/stream?stoken=' + encodeURIComponent(data.stoken);
 }

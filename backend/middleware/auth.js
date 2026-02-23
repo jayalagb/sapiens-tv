@@ -1,14 +1,37 @@
 const jwt = require('jsonwebtoken');
 const { query } = require('../config/database');
 
-const JWT_SECRET = process.env.JWT_SECRET || 'sesamotv-dev-secret';
+const JWT_SECRET = process.env.JWT_SECRET || (process.env.NODE_ENV === 'production' ? null : 'sesamotv-dev-secret');
+if (!JWT_SECRET) {
+    throw new Error('JWT_SECRET environment variable is required in production');
+}
 
 function generateToken(admin) {
     return jwt.sign(
-        { id: admin.id, uid: admin.uid, username: admin.username },
+        { id: admin.id, uid: admin.uid, username: admin.username, type: 'admin' },
         JWT_SECRET,
         { expiresIn: '24h' }
     );
+}
+
+function generateUserToken(user) {
+    return jwt.sign(
+        { id: user.id, uid: user.uid, username: user.username, type: 'user' },
+        JWT_SECRET,
+        { expiresIn: '24h' }
+    );
+}
+
+function generateStreamToken(payload, videoUid) {
+    return jwt.sign(
+        { uid: payload.uid, videoUid, purpose: 'stream' },
+        JWT_SECRET,
+        { expiresIn: '1h' }
+    );
+}
+
+function verifyToken(token) {
+    return jwt.verify(token, JWT_SECRET);
 }
 
 function authenticateToken(req, res, next) {
@@ -20,35 +43,29 @@ function authenticateToken(req, res, next) {
     }
 
     try {
-        req.admin = jwt.verify(token, JWT_SECRET);
+        const decoded = verifyToken(token);
+        if (decoded.type !== 'admin') {
+            return res.status(403).json({ error: 'Acceso denegado' });
+        }
+        req.admin = decoded;
         next();
     } catch (err) {
         return res.status(403).json({ error: 'Token invalido' });
     }
 }
 
-function generateUserToken(user) {
-    return jwt.sign(
-        { id: user.id, uid: user.uid, username: user.username, type: 'user' },
-        JWT_SECRET,
-        { expiresIn: '7d' }
-    );
-}
-
 async function requireApprovedUser(req, res, next) {
-    // Accept token from header or query param (needed for <video src>)
     const authHeader = req.headers['authorization'];
-    const token = (authHeader && authHeader.split(' ')[1]) || req.query.token;
+    const token = authHeader && authHeader.split(' ')[1];
 
     if (!token) {
         return res.status(401).json({ error: 'Token requerido' });
     }
 
     try {
-        const decoded = jwt.verify(token, JWT_SECRET);
+        const decoded = verifyToken(token);
 
-        // Admin tokens pass through (no type field = admin)
-        if (!decoded.type) {
+        if (decoded.type === 'admin') {
             req.admin = decoded;
             return next();
         }
@@ -77,4 +94,4 @@ async function requireApprovedUser(req, res, next) {
     }
 }
 
-module.exports = { generateToken, authenticateToken, generateUserToken, requireApprovedUser };
+module.exports = { generateToken, authenticateToken, generateUserToken, generateStreamToken, verifyToken, requireApprovedUser };

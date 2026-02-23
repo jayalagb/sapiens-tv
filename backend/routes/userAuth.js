@@ -1,7 +1,7 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
 const { query } = require('../config/database');
-const { generateUserToken } = require('../middleware/auth');
+const { generateUserToken, verifyToken } = require('../middleware/auth');
 
 const router = express.Router();
 
@@ -108,15 +108,12 @@ router.post('/login', async (req, res) => {
 
 // GET /api/user-auth/me
 router.get('/me', async (req, res) => {
-    const jwt = require('jsonwebtoken');
-    const JWT_SECRET = process.env.JWT_SECRET || 'sesamotv-dev-secret';
-
     const authHeader = req.headers['authorization'];
     const token = authHeader && authHeader.split(' ')[1];
     if (!token) return res.status(401).json({ error: 'Token requerido' });
 
     try {
-        const decoded = jwt.verify(token, JWT_SECRET);
+        const decoded = verifyToken(token);
         const result = await query(
             'SELECT uid, username, email, status, created_at FROM users WHERE uid = $1',
             [decoded.uid]

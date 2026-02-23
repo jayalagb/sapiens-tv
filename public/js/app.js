@@ -34,14 +34,14 @@ async function loadVideos(params = {}) {
     try { videos = await apiGetVideos(params); } catch (e) { videos = []; }
 }
 
-function render() {
+async function render() {
     const app = document.getElementById('app');
     switch (currentScreen) {
         case 'landing': app.innerHTML = renderLanding(); break;
         case 'login': app.innerHTML = renderLoginScreen(); break;
         case 'register': app.innerHTML = renderRegisterScreen(); break;
         case 'reset': app.innerHTML = renderResetScreen(); break;
-        case 'player': app.innerHTML = renderPlayer(); break;
+        case 'player': app.innerHTML = await renderPlayer(); break;
         default: app.innerHTML = renderHome(); break;
     }
 }
@@ -252,7 +252,7 @@ function renderHome() {
                 <button class="tag-chip ${!selectedTag ? 'active' : ''}" onclick="filterByTag(null)">Todos</button>
                 ${tags.map(t => `
                     <button class="tag-chip ${selectedTag === t.name ? 'active' : ''}"
-                            onclick="filterByTag('${t.name}')">${t.name} (${t.video_count})</button>
+                            onclick="filterByTag(${JSON.stringify(t.name)})">${escapeHtml(t.name)} (${t.video_count})</button>
                 `).join('')}
             </div>
 
@@ -273,7 +273,7 @@ function renderHome() {
                             </div>
                             ${renderStars(v.rating || 0)}
                             <div class="video-tags">
-                                ${(v.tags || []).map(t => `<span class="tag-badge">${t.name}</span>`).join('')}
+                                ${(v.tags || []).map(t => `<span class="tag-badge">${escapeHtml(t.name)}</span>`).join('')}
                             </div>
                         </div>
                     </div>
@@ -285,9 +285,10 @@ function renderHome() {
 
 // --- Player ---
 
-function renderPlayer() {
+async function renderPlayer() {
     const v = currentVideo;
     if (!v) return renderHome();
+    const streamUrl = await getStreamUrl(v.uid);
     return `
         <div class="container">
             <header class="header">
@@ -301,7 +302,7 @@ function renderPlayer() {
 
             <div class="player-wrapper">
                 <video id="video-player" controls playsinline autoplay
-                       src="${getStreamUrl(v.uid)}">
+                       src="${streamUrl}">
                     Tu navegador no soporta video HTML5.
                 </video>
             </div>
@@ -324,7 +325,7 @@ function renderPlayer() {
                 </div>
                 ${v.description ? `<p class="video-description">${escapeHtml(v.description)}</p>` : ''}
                 <div class="video-tags">
-                    ${(v.tags || []).map(t => `<span class="tag-badge clickable" onclick="goHome(); filterByTag('${t.name}')">${t.name}</span>`).join('')}
+                    ${(v.tags || []).map(t => `<span class="tag-badge clickable" onclick="goHome(); filterByTag(${JSON.stringify(t.name)})">${escapeHtml(t.name)}</span>`).join('')}
                 </div>
             </div>
 

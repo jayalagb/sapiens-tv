@@ -5,7 +5,7 @@ const fs = require('fs');
 const os = require('os');
 const { v4: uuidv4 } = require('uuid');
 const { query } = require('../config/database');
-const { authenticateToken, requireApprovedUser } = require('../middleware/auth');
+const { authenticateToken, requireApprovedUser, generateStreamToken, verifyToken } = require('../middleware/auth');
 const { uploadBlob, getBlobProperties, downloadBlobStream, deleteBlob } = require('../config/blobStorage');
 
 const router = express.Router();
@@ -38,7 +38,9 @@ const upload = multer({
 // GET /api/videos - List videos (requires approved user)
 router.get('/', requireApprovedUser, async (req, res) => {
     try {
-        const { tag, search, limit = 50, offset = 0 } = req.query;
+        const { tag, search } = req.query;
+        const limit = Math.min(Math.max(parseInt(req.query.limit) || 50, 1), 100);
+        const offset = Math.max(parseInt(req.query.offset) || 0, 0);
         let sql, params;
 
         if (tag) {
@@ -173,9 +175,41 @@ router.get('/:uid', requireApprovedUser, async (req, res) => {
     }
 });
 
-// GET /api/videos/:uid/stream - Stream video from Azure Blob (requires approved user, accepts ?token= for <video src>)
-router.get('/:uid/stream', requireApprovedUser, async (req, res) => {
+// GET /api/videos/:uid/stream-token - Get a short-lived token for streaming
+router.get('/:uid/stream-token', requireApprovedUser, async (req, res) => {
     try {
+        const result = await query('SELECT uid FROM videos WHERE uid = $1', [req.params.uid]);
+        if (result.rows.length === 0) {
+            return res.status(404).json({ error: 'Video no encontrado' });
+        }
+        const payload = req.user || req.admin;
+        const stoken = generateStreamToken(payload, req.params.uid);
+        res.json({ stoken });
+    } catch (error) {
+        console.error('Stream token error:', error);
+        res.status(500).json({ error: 'Error al generar token de streaming' });
+    }
+});
+
+// GET /api/videos/:uid/stream - Stream video from Azure Blob (uses short-lived stream token via ?stoken=)
+router.get('/:uid/stream', async (req, res) => {
+    try {
+        const stoken = req.query.stoken;
+        if (!stoken) {
+            return res.status(401).json({ error: 'Stream token requerido' });
+        }
+
+        let decoded;
+        try {
+            decoded = verifyToken(stoken);
+        } catch (err) {
+            return res.status(403).json({ error: 'Stream token invalido o expirado' });
+        }
+
+        if (decoded.purpose !== 'stream' || decoded.videoUid !== req.params.uid) {
+            return res.status(403).json({ error: 'Stream token invalido para este video' });
+        }
+
         const result = await query('SELECT video_url FROM videos WHERE uid = $1', [req.params.uid]);
         if (result.rows.length === 0) {
             return res.status(404).json({ error: 'Video no encontrado' });
