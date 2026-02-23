@@ -7,6 +7,7 @@ const { v4: uuidv4 } = require('uuid');
 const { query } = require('../config/database');
 const { authenticateToken, requireApprovedUser, generateStreamToken, verifyStreamToken } = require('../middleware/auth');
 const { uploadBlob, getBlobProperties, downloadBlobStream, deleteBlob } = require('../config/blobStorage');
+const { generateThumbnail } = require('../utils/thumbnail');
 
 const rateLimit = require('express-rate-limit');
 
@@ -43,6 +44,11 @@ const upload = multer({
         }
     }
 });
+
+// Transform thumbnail blob name to API URL
+function thumbnailApiUrl(video) {
+    return video.thumbnail_url ? `/api/videos/${video.uid}/thumbnail` : null;
+}
 
 // GET /api/videos - List videos (requires approved user)
 router.get('/', requireApprovedUser, async (req, res) => {
@@ -111,7 +117,7 @@ router.get('/', requireApprovedUser, async (req, res) => {
                 title: video.title,
                 description: video.description,
                 videoUrl: video.video_url,
-                thumbnailUrl: video.thumbnail_url,
+                thumbnailUrl: thumbnailApiUrl(video),
                 duration: video.duration,
                 views: video.views_count,
                 sortOrder: video.sort_order,
@@ -169,7 +175,7 @@ router.get('/:uid', requireApprovedUser, async (req, res) => {
             title: video.title,
             description: video.description,
             videoUrl: video.video_url,
-            thumbnailUrl: video.thumbnail_url,
+            thumbnailUrl: thumbnailApiUrl(video),
             duration: video.duration,
             views: video.views_count,
             sortOrder: video.sort_order,
@@ -181,6 +187,31 @@ router.get('/:uid', requireApprovedUser, async (req, res) => {
     } catch (error) {
         console.error('Get video error:', error);
         res.status(500).json({ error: 'Error al obtener video' });
+    }
+});
+
+// GET /api/videos/:uid/thumbnail - Serve thumbnail image (no auth required)
+router.get('/:uid/thumbnail', async (req, res) => {
+    try {
+        const result = await query('SELECT thumbnail_url FROM videos WHERE uid = $1', [req.params.uid]);
+        if (result.rows.length === 0 || !result.rows[0].thumbnail_url) {
+            return res.status(404).json({ error: 'Thumbnail no encontrado' });
+        }
+
+        const blobName = result.rows[0].thumbnail_url;
+        const stream = await downloadBlobStream(blobName, 0);
+
+        res.set({
+            'Content-Type': 'image/jpeg',
+            'Cache-Control': 'public, max-age=86400'
+        });
+        stream.pipe(res);
+    } catch (error) {
+        console.error('Thumbnail error:', error);
+        if (error.statusCode === 404) {
+            return res.status(404).json({ error: 'Thumbnail no encontrado en storage' });
+        }
+        res.status(500).json({ error: 'Error al obtener thumbnail' });
     }
 });
 
@@ -360,7 +391,20 @@ router.post('/', authenticateToken, upload.single('video'), async (req, res) => 
         const blobName = req.file.filename; // uuid.ext
         const videoRating = Math.min(5, Math.max(0, parseFloat(rating) || 0));
 
-        // Upload to Azure Blob Storage
+        // Generate thumbnail before uploading video (non-fatal)
+        let thumbnailBlobName = null;
+        try {
+            const thumbPath = await generateThumbnail(req.file.path);
+            if (thumbPath) {
+                thumbnailBlobName = `thumb_${uid}.jpg`;
+                await uploadBlob(thumbnailBlobName, thumbPath);
+                fs.unlinkSync(thumbPath);
+            }
+        } catch (thumbErr) {
+            console.error('Thumbnail generation failed (non-fatal):', thumbErr.message);
+        }
+
+        // Upload video to Azure Blob Storage
         await uploadBlob(blobName, req.file.path);
 
         // Delete temp file
@@ -371,10 +415,10 @@ router.post('/', authenticateToken, upload.single('video'), async (req, res) => 
         const sortOrder = maxOrder.rows[0].next_order;
 
         const result = await query(
-            `INSERT INTO videos (uid, title, description, video_url, sort_order, rating, uploaded_by)
-             VALUES ($1, $2, $3, $4, $5, $6, $7)
-             RETURNING id, uid, title, description, video_url, sort_order, rating, created_at`,
-            [uid, title, description || '', blobName, sortOrder, videoRating, req.admin.id]
+            `INSERT INTO videos (uid, title, description, video_url, thumbnail_url, sort_order, rating, uploaded_by)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+             RETURNING id, uid, title, description, video_url, thumbnail_url, sort_order, rating, created_at`,
+            [uid, title, description || '', blobName, thumbnailBlobName, sortOrder, videoRating, req.admin.id]
         );
 
         const video = result.rows[0];
@@ -396,6 +440,7 @@ router.post('/', authenticateToken, upload.single('video'), async (req, res) => 
             title: video.title,
             description: video.description,
             videoUrl: video.video_url,
+            thumbnailUrl: thumbnailApiUrl(video),
             sortOrder: video.sort_order,
             rating: parseFloat(video.rating) || 0,
             createdAt: video.created_at
@@ -485,13 +530,16 @@ router.put('/:uid', authenticateToken, async (req, res) => {
 // DELETE /api/videos/:uid - Delete video (admin)
 router.delete('/:uid', authenticateToken, async (req, res) => {
     try {
-        const result = await query('SELECT id, video_url FROM videos WHERE uid = $1', [req.params.uid]);
+        const result = await query('SELECT id, video_url, thumbnail_url FROM videos WHERE uid = $1', [req.params.uid]);
         if (result.rows.length === 0) {
             return res.status(404).json({ error: 'Video no encontrado' });
         }
 
-        // Delete blob from Azure Storage
+        // Delete blobs from Azure Storage
         await deleteBlob(result.rows[0].video_url);
+        if (result.rows[0].thumbnail_url) {
+            await deleteBlob(result.rows[0].thumbnail_url);
+        }
 
         await query('DELETE FROM videos WHERE id = $1', [result.rows[0].id]);
         res.json({ message: 'Video eliminado' });
