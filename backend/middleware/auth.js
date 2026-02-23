@@ -2,8 +2,9 @@ const jwt = require('jsonwebtoken');
 const { query } = require('../config/database');
 
 const JWT_SECRET = process.env.JWT_SECRET || (process.env.NODE_ENV === 'production' ? null : 'sesamotv-dev-secret');
-if (!JWT_SECRET) {
-    throw new Error('JWT_SECRET environment variable is required in production');
+const JWT_SECRET_USER = process.env.JWT_SECRET_USER || (process.env.NODE_ENV === 'production' ? null : 'sesamotv-dev-user-secret');
+if (!JWT_SECRET || !JWT_SECRET_USER) {
+    throw new Error('JWT_SECRET and JWT_SECRET_USER environment variables are required in production');
 }
 
 function generateToken(admin) {
@@ -17,21 +18,26 @@ function generateToken(admin) {
 function generateUserToken(user) {
     return jwt.sign(
         { id: user.id, uid: user.uid, username: user.username, type: 'user' },
-        JWT_SECRET,
-        { expiresIn: '24h' }
+        JWT_SECRET_USER,
+        { expiresIn: '7d' }
     );
 }
 
 function generateStreamToken(payload, videoUid) {
     return jwt.sign(
-        { uid: payload.uid, videoUid, purpose: 'stream' },
+        { uid: payload.uid, videoUid, purpose: 'stream', type: payload.type || 'user' },
         JWT_SECRET,
         { expiresIn: '1h' }
     );
 }
 
 function verifyToken(token) {
-    return jwt.verify(token, JWT_SECRET);
+    // Try admin/stream secret first, then user secret
+    try {
+        return jwt.verify(token, JWT_SECRET);
+    } catch (err) {
+        return jwt.verify(token, JWT_SECRET_USER);
+    }
 }
 
 function authenticateToken(req, res, next) {

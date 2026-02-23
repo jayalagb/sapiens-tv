@@ -139,16 +139,25 @@ router.post('/reset-request', async (req, res) => {
             return res.json({ message: 'Si el email existe, tu solicitud ha sido enviada al administrador.' });
         }
 
-        // Check if there's already a pending request
+        // Auto-expire old pending requests
+        await query(
+            "UPDATE password_resets SET status = 'completed' WHERE user_id = $1 AND status = 'pending' AND expires_at < CURRENT_TIMESTAMP",
+            [user.rows[0].id]
+        );
+
+        // Check if there's already a pending (non-expired) request
         const existing = await query(
-            "SELECT id FROM password_resets WHERE user_id = $1 AND status = 'pending'",
+            "SELECT id FROM password_resets WHERE user_id = $1 AND status = 'pending' AND expires_at > CURRENT_TIMESTAMP",
             [user.rows[0].id]
         );
         if (existing.rows.length > 0) {
             return res.json({ message: 'Si el email existe, tu solicitud ha sido enviada al administrador.' });
         }
 
-        await query('INSERT INTO password_resets (user_id) VALUES ($1)', [user.rows[0].id]);
+        await query(
+            "INSERT INTO password_resets (user_id, expires_at) VALUES ($1, CURRENT_TIMESTAMP + INTERVAL '1 hour')",
+            [user.rows[0].id]
+        );
         res.json({ message: 'Si el email existe, tu solicitud ha sido enviada al administrador.' });
     } catch (error) {
         console.error('Reset request error:', error);

@@ -26,8 +26,9 @@ const upload = multer({
     limits: { fileSize: 500 * 1024 * 1024 }, // 500MB
     fileFilter: (req, file, cb) => {
         const allowed = ['.mp4', '.webm', '.mov', '.avi', '.mkv'];
+        const allowedMimes = ['video/mp4', 'video/webm', 'video/quicktime', 'video/x-msvideo', 'video/x-matroska'];
         const ext = path.extname(file.originalname).toLowerCase();
-        if (allowed.includes(ext)) {
+        if (allowed.includes(ext) && allowedMimes.includes(file.mimetype)) {
             cb(null, true);
         } else {
             cb(new Error('Formato de video no soportado'));
@@ -208,6 +209,14 @@ router.get('/:uid/stream', async (req, res) => {
 
         if (decoded.purpose !== 'stream' || decoded.videoUid !== req.params.uid) {
             return res.status(403).json({ error: 'Stream token invalido para este video' });
+        }
+
+        // Verify user is still approved (not revoked since token was issued)
+        if (decoded.type === 'user') {
+            const userCheck = await query('SELECT status FROM users WHERE uid = $1', [decoded.uid]);
+            if (userCheck.rows.length === 0 || userCheck.rows[0].status !== 'approved') {
+                return res.status(403).json({ error: 'Usuario no autorizado' });
+            }
         }
 
         const result = await query('SELECT video_url FROM videos WHERE uid = $1', [req.params.uid]);

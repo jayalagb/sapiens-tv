@@ -49,7 +49,7 @@ router.get('/', async (req, res) => {
 
         // Get pending reset count
         const resetsResult = await query(
-            "SELECT COUNT(*)::int as count FROM password_resets WHERE status = 'pending'"
+            "SELECT COUNT(*)::int as count FROM password_resets WHERE status = 'pending' AND expires_at > CURRENT_TIMESTAMP"
         );
         counts.pendingResets = resetsResult.rows[0].count;
 
@@ -79,7 +79,7 @@ router.get('/reset-requests', async (req, res) => {
                    u.uid as user_uid, u.username, u.email
             FROM password_resets pr
             JOIN users u ON pr.user_id = u.id
-            WHERE pr.status = 'pending'
+            WHERE pr.status = 'pending' AND pr.expires_at > CURRENT_TIMESTAMP
             ORDER BY pr.created_at DESC
         `);
         res.json(result.rows.map(r => ({

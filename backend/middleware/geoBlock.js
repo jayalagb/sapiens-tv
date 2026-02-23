@@ -81,8 +81,13 @@ const geoBlock = (req, res, next) => {
     const geo = geoip.lookup(clientIP);
 
     if (!geo) {
-        console.log(`[GEO-ALLOW] IP sin ubicación permitida: ${clientIP}`);
-        return next();
+        console.warn(`[GEO-BLOCK] IP sin ubicación bloqueada: ${clientIP}`);
+        return res.status(403).json({
+            error: {
+                message: 'No se puede verificar tu ubicación',
+                code: 'GEO_UNKNOWN'
+            }
+        });
     }
 
     if (!ALLOWED_COUNTRIES.includes(geo.country)) {
