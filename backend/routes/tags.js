@@ -28,6 +28,9 @@ router.post('/', authenticateToken, async (req, res) => {
         if (!name || !name.trim()) {
             return res.status(400).json({ error: 'Nombre requerido' });
         }
+        if (name.trim().length > 50) {
+            return res.status(400).json({ error: 'Nombre de tag demasiado largo (max 50 caracteres)' });
+        }
 
         const result = await query(
             'INSERT INTO tags (name) VALUES ($1) RETURNING id, name',

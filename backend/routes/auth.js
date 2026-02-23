@@ -17,7 +17,11 @@ router.post('/login', async (req, res) => {
             [username]
         );
 
+        // Dummy hash to prevent timing attacks when user not found
+        const dummyHash = '$2a$10$abcdefghijklmnopqrstuuABCDEFGHIJKLMNOPQRSTUVWXYZ012';
+
         if (result.rows.length === 0) {
+            await bcrypt.compare(password, dummyHash);
             return res.status(401).json({ error: 'Credenciales invalidas' });
         }
 

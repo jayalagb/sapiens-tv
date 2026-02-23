@@ -83,7 +83,6 @@ router.get('/reset-requests', async (req, res) => {
             ORDER BY pr.created_at DESC
         `);
         res.json(result.rows.map(r => ({
-            id: r.id,
             userUid: r.user_uid,
             username: r.username,
             email: r.email,

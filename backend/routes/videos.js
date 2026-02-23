@@ -335,10 +335,17 @@ router.post('/', authenticateToken, upload.single('video'), async (req, res) => 
         }
 
         const { title, description, tags, rating } = req.body;
-        if (!title) {
-            // Clean up temp file
+        if (!title || !title.trim()) {
             fs.unlinkSync(req.file.path);
             return res.status(400).json({ error: 'Titulo requerido' });
+        }
+        if (title.length > 255) {
+            fs.unlinkSync(req.file.path);
+            return res.status(400).json({ error: 'Titulo demasiado largo (max 255 caracteres)' });
+        }
+        if (description && description.length > 5000) {
+            fs.unlinkSync(req.file.path);
+            return res.status(400).json({ error: 'Descripcion demasiado larga (max 5000 caracteres)' });
         }
 
         const uid = uuidv4();
@@ -400,7 +407,11 @@ router.put('/reorder', authenticateToken, async (req, res) => {
         }
 
         for (const item of order) {
-            await query('UPDATE videos SET sort_order = $1 WHERE uid = $2', [item.sortOrder, item.uid]);
+            const sortOrder = parseInt(item.sortOrder, 10);
+            if (!item.uid || typeof item.uid !== 'string' || isNaN(sortOrder) || sortOrder < 0) {
+                return res.status(400).json({ error: 'Datos de orden invalidos' });
+            }
+            await query('UPDATE videos SET sort_order = $1 WHERE uid = $2', [sortOrder, item.uid]);
         }
 
         res.json({ message: 'Orden actualizado' });
@@ -414,6 +425,12 @@ router.put('/reorder', authenticateToken, async (req, res) => {
 router.put('/:uid', authenticateToken, async (req, res) => {
     try {
         const { title, description, tags, rating } = req.body;
+        if (title && title.length > 255) {
+            return res.status(400).json({ error: 'Titulo demasiado largo (max 255 caracteres)' });
+        }
+        if (description && description.length > 5000) {
+            return res.status(400).json({ error: 'Descripcion demasiado larga (max 5000 caracteres)' });
+        }
         const videoRating = rating !== undefined ? Math.min(5, Math.max(0, parseFloat(rating) || 0)) : undefined;
 
         const result = await query(

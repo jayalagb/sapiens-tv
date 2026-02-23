@@ -78,7 +78,10 @@ router.post('/login', async (req, res) => {
             [username.trim()]
         );
 
+        const dummyHash = '$2a$10$abcdefghijklmnopqrstuuABCDEFGHIJKLMNOPQRSTUVWXYZ012';
+
         if (result.rows.length === 0) {
+            await bcrypt.compare(password, dummyHash);
             return res.status(401).json({ error: 'Credenciales invalidas' });
         }
 
@@ -133,32 +136,33 @@ router.post('/reset-request', async (req, res) => {
         const { email } = req.body;
         if (!email) return res.status(400).json({ error: 'Email requerido' });
 
+        const responseMsg = { message: 'Si el email existe, tu solicitud ha sido enviada al administrador.' };
+        const minDelay = 200;
+        const start = Date.now();
+
         const user = await query('SELECT id FROM users WHERE email = $1', [email.trim().toLowerCase()]);
-        if (user.rows.length === 0) {
-            // Don't reveal if email exists
-            return res.json({ message: 'Si el email existe, tu solicitud ha sido enviada al administrador.' });
+        if (user.rows.length > 0) {
+            // Auto-expire old + insert atomically to prevent race conditions
+            await query(
+                "UPDATE password_resets SET status = 'completed' WHERE user_id = $1 AND status = 'pending' AND expires_at < CURRENT_TIMESTAMP",
+                [user.rows[0].id]
+            );
+            await query(
+                `INSERT INTO password_resets (user_id, expires_at)
+                 SELECT $1, CURRENT_TIMESTAMP + INTERVAL '1 hour'
+                 WHERE NOT EXISTS (
+                     SELECT 1 FROM password_resets WHERE user_id = $1 AND status = 'pending' AND expires_at > CURRENT_TIMESTAMP
+                 )`,
+                [user.rows[0].id]
+            );
         }
 
-        // Auto-expire old pending requests
-        await query(
-            "UPDATE password_resets SET status = 'completed' WHERE user_id = $1 AND status = 'pending' AND expires_at < CURRENT_TIMESTAMP",
-            [user.rows[0].id]
-        );
-
-        // Check if there's already a pending (non-expired) request
-        const existing = await query(
-            "SELECT id FROM password_resets WHERE user_id = $1 AND status = 'pending' AND expires_at > CURRENT_TIMESTAMP",
-            [user.rows[0].id]
-        );
-        if (existing.rows.length > 0) {
-            return res.json({ message: 'Si el email existe, tu solicitud ha sido enviada al administrador.' });
+        // Constant-time delay to prevent email enumeration via timing
+        const elapsed = Date.now() - start;
+        if (elapsed < minDelay) {
+            await new Promise(resolve => setTimeout(resolve, minDelay - elapsed));
         }
-
-        await query(
-            "INSERT INTO password_resets (user_id, expires_at) VALUES ($1, CURRENT_TIMESTAMP + INTERVAL '1 hour')",
-            [user.rows[0].id]
-        );
-        res.json({ message: 'Si el email existe, tu solicitud ha sido enviada al administrador.' });
+        res.json(responseMsg);
     } catch (error) {
         console.error('Reset request error:', error);
         res.status(500).json({ error: 'Error al procesar solicitud' });
