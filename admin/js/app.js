@@ -8,6 +8,8 @@ let users = [];
 let userCounts = { pending: 0, approved: 0, rejected: 0, total: 0, pendingResets: 0 };
 let usersFilter = 'all';
 let resetRequests = [];
+let jobs = [];
+let jobIdCounter = 0;
 
 async function init() {
     try {
@@ -53,6 +55,7 @@ function render() {
         case 'dashboard': app.innerHTML = renderDashboard(); break;
         case 'upload': app.innerHTML = renderUpload(); break;
         case 'edit': app.innerHTML = renderEdit(); break;
+        case 'jobs': app.innerHTML = renderJobs(); break;
         case 'tags': app.innerHTML = renderTags(); break;
         case 'users': app.innerHTML = renderUsers(); break;
         case 'settings': app.innerHTML = renderSettings(); break;
@@ -66,6 +69,7 @@ function renderSidebar() {
             <h2 class="sidebar-logo">SesamoTV</h2>
             <div class="nav-item ${currentScreen === 'dashboard' ? 'active' : ''}" onclick="navigateTo('dashboard')">Videos</div>
             <div class="nav-item ${currentScreen === 'upload' ? 'active' : ''}" onclick="navigateTo('upload')">Subir Video</div>
+            <div class="nav-item ${currentScreen === 'jobs' ? 'active' : ''}" onclick="navigateTo('jobs')">Jobs ${getActiveJobCount() > 0 ? `<span class="badge badge-jobs">${getActiveJobCount()}</span>` : ''}</div>
             <div class="nav-item ${currentScreen === 'tags' ? 'active' : ''}" onclick="navigateTo('tags')">Tags</div>
             <div class="nav-item ${currentScreen === 'users' ? 'active' : ''}" onclick="navigateTo('users')">Usuarios ${pendingBadge}</div>
             <div class="nav-item ${currentScreen === 'settings' ? 'active' : ''}" onclick="navigateTo('settings')">&#9881; Ajustes</div>
@@ -479,29 +483,98 @@ async function handleUpload() {
     const title = document.getElementById('upload-title').value;
     if (!title) return alert('Titulo requerido');
 
-    const formData = new FormData();
-    formData.append('video', selectedFile);
-    formData.append('title', title);
-    formData.append('description', document.getElementById('upload-desc').value);
-    formData.append('rating', document.getElementById('upload-rating').value);
+    const description = document.getElementById('upload-desc').value;
+    const rating = document.getElementById('upload-rating').value;
     const tagIds = [...document.querySelectorAll('.upload-tag:checked')].map(c => parseInt(c.value));
-    formData.append('tags', JSON.stringify(tagIds));
 
-    const btn = document.getElementById('upload-btn');
-    btn.disabled = true;
-    btn.textContent = 'Subiendo...';
+    createJob(title, selectedFile, description, rating, tagIds);
+    selectedFile = null;
+    navigateTo('dashboard');
+}
+
+function createJob(title, file, description, rating, tagIds) {
+    const job = {
+        id: ++jobIdCounter,
+        title,
+        file,
+        description,
+        rating,
+        tagIds,
+        status: 'uploading',
+        errorMessage: null,
+        timestamp: Date.now()
+    };
+    jobs.push(job);
+    render();
+    executeJob(job);
+}
+
+async function executeJob(job) {
+    job.status = 'uploading';
+    job.errorMessage = null;
+    render();
+
+    const formData = new FormData();
+    formData.append('video', job.file);
+    formData.append('title', job.title);
+    formData.append('description', job.description);
+    formData.append('rating', job.rating);
+    formData.append('tags', JSON.stringify(job.tagIds));
 
     try {
         await apiUploadVideo(formData);
-        alert('Video subido!');
-        selectedFile = null;
+        job.status = 'success';
         await loadData();
-        navigateTo('dashboard');
     } catch (e) {
-        alert('Error: ' + e.message);
-        btn.disabled = false;
-        btn.textContent = 'Subir Video';
+        job.status = 'error';
+        job.errorMessage = e.message;
     }
+    render();
+}
+
+function retryJob(jobId) {
+    const job = jobs.find(j => j.id === jobId);
+    if (job) executeJob(job);
+}
+
+function getActiveJobCount() {
+    return jobs.filter(j => j.status === 'uploading').length;
+}
+
+function jobStatusLabel(status) {
+    return { uploading: 'Subiendo...', success: 'Completado', error: 'Error' }[status] || status;
+}
+
+function jobIcon(status) {
+    if (status === 'uploading') return '<span class="job-spinner"></span>';
+    if (status === 'success') return '<span class="job-icon-check">&#10003;</span>';
+    return '<span class="job-icon-error">&#10007;</span>';
+}
+
+function renderJobs() {
+    return `
+        <div class="admin-layout">
+            ${renderSidebar()}
+            <main class="main-content">
+                <h2>Jobs</h2>
+                ${jobs.length === 0 ? '<p class="empty">No hay trabajos de subida recientes.</p>' :
+                  `<div class="jobs-list">
+                      ${jobs.slice().reverse().map(j => `
+                          <div class="job-row job-${j.status}">
+                              <div class="job-icon">${jobIcon(j.status)}</div>
+                              <div class="job-info">
+                                  <div class="job-title">${escapeHtml(j.title)}</div>
+                                  <div class="job-meta">${jobStatusLabel(j.status)}${j.errorMessage ? ' — ' + escapeHtml(j.errorMessage) : ''}</div>
+                              </div>
+                              <div class="job-actions">
+                                  ${j.status === 'error' ? `<button class="btn btn-sm btn-primary" onclick="retryJob(${j.id})">Reintentar</button>` : ''}
+                              </div>
+                          </div>
+                      `).join('')}
+                  </div>`}
+            </main>
+        </div>
+    `;
 }
 
 async function startEdit(uid) {
