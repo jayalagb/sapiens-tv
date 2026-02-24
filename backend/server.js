@@ -12,6 +12,7 @@ const userAuthRoutes = require('./routes/userAuth');
 const usersRoutes = require('./routes/users');
 const videoRoutes = require('./routes/videos');
 const tagRoutes = require('./routes/tags');
+const settingsRoutes = require('./routes/settings');
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -115,6 +116,7 @@ app.use('/api/user-auth', userAuthRoutes);
 app.use('/api/users', usersRoutes);
 app.use('/api/videos', videoRoutes);
 app.use('/api/tags', tagRoutes);
+app.use('/api/settings', settingsRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {

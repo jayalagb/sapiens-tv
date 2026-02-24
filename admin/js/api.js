@@ -97,6 +97,17 @@ async function apiResetPassword(uid, password) {
     });
 }
 
+async function apiGetSettings() {
+    return await apiCall('/settings');
+}
+
+async function apiSetGeoBlocking(enabled) {
+    return await apiCall('/settings/geo-blocking', {
+        method: 'PUT',
+        body: JSON.stringify({ enabled })
+    });
+}
+
 function logout() {
     authToken = null;
     localStorage.removeItem('sesamotv_admin_token');

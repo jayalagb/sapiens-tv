@@ -56,6 +56,7 @@ function render() {
         case 'edit': app.innerHTML = renderEdit(); break;
         case 'tags': app.innerHTML = renderTags(); break;
         case 'users': app.innerHTML = renderUsers(); break;
+        case 'settings': app.innerHTML = renderSettings(); break;
     }
 }
 
@@ -68,6 +69,7 @@ function renderSidebar() {
             <div class="nav-item ${currentScreen === 'upload' ? 'active' : ''}" onclick="navigateTo('upload')">Subir Video</div>
             <div class="nav-item ${currentScreen === 'tags' ? 'active' : ''}" onclick="navigateTo('tags')">Tags</div>
             <div class="nav-item ${currentScreen === 'users' ? 'active' : ''}" onclick="navigateTo('users')">Usuarios ${pendingBadge}</div>
+            <div class="nav-item ${currentScreen === 'settings' ? 'active' : ''}" onclick="navigateTo('settings')">&#9881; Ajustes</div>
             <div class="nav-item logout" onclick="handleLogout()">Cerrar sesion</div>
         </nav>
     `;
@@ -396,6 +398,58 @@ async function resetPassword(uid, username) {
     } catch (e) { alert('Error: ' + e.message); }
 }
 
+// --- Settings ---
+
+let settingsData = {};
+
+async function loadSettings() {
+    try {
+        settingsData = await apiGetSettings();
+    } catch (e) {
+        settingsData = {};
+    }
+}
+
+function renderSettings() {
+    const geoEnabled = settingsData.geo_block_enabled === 'true';
+    return `
+        <div class="admin-layout">
+            ${renderSidebar()}
+            <main class="main-content">
+                <h2>Ajustes</h2>
+                <div class="form-card">
+                    <div class="setting-row" style="display:flex;align-items:center;justify-content:space-between;padding:16px 0;">
+                        <div>
+                            <div style="font-weight:600;font-size:1.05em;">Geo-bloqueo</div>
+                            <div style="color:#888;font-size:0.9em;margin-top:4px;">Solo permite acceso desde Espana. Si esta desactivado, cualquier pais puede acceder.</div>
+                        </div>
+                        <label class="toggle-switch" style="position:relative;display:inline-block;width:50px;height:26px;flex-shrink:0;margin-left:20px;">
+                            <input type="checkbox" id="geo-toggle" ${geoEnabled ? 'checked' : ''} onchange="handleToggleGeoBlock(this.checked)"
+                                   style="opacity:0;width:0;height:0;">
+                            <span class="toggle-slider" style="position:absolute;cursor:pointer;top:0;left:0;right:0;bottom:0;background:${geoEnabled ? '#4CAF50' : '#ccc'};border-radius:26px;transition:.3s;"></span>
+                            <span style="position:absolute;top:3px;${geoEnabled ? 'left:27px' : 'left:3px'};width:20px;height:20px;background:white;border-radius:50%;transition:.3s;pointer-events:none;"></span>
+                        </label>
+                    </div>
+                    <div id="geo-status" style="margin-top:8px;font-size:0.9em;color:${geoEnabled ? '#4CAF50' : '#888'};">
+                        Estado: ${geoEnabled ? 'Activado — solo Espana' : 'Desactivado — acceso global'}
+                    </div>
+                </div>
+            </main>
+        </div>
+    `;
+}
+
+async function handleToggleGeoBlock(enabled) {
+    try {
+        await apiSetGeoBlocking(enabled);
+        settingsData.geo_block_enabled = enabled ? 'true' : 'false';
+        render();
+    } catch (e) {
+        alert('Error: ' + e.message);
+        render();
+    }
+}
+
 // --- Video Actions ---
 
 let selectedFile = null;
@@ -555,6 +609,8 @@ async function navigateTo(screen) {
     currentScreen = screen;
     if (screen === 'users') {
         await loadUsers(usersFilter);
+    } else if (screen === 'settings') {
+        await loadSettings();
     }
     render();
 }

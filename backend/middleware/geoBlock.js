@@ -1,7 +1,36 @@
 const geoip = require('geoip-lite');
+const { query } = require('../config/database');
 
 // Países permitidos (código ISO)
 const ALLOWED_COUNTRIES = ['ES']; // España
+
+// In-memory cache for geo-block setting
+let geoBlockEnabled = null;
+
+async function loadGeoBlockSetting() {
+    try {
+        const result = await query("SELECT value FROM settings WHERE key = 'geo_block_enabled'");
+        if (result.rows.length > 0) {
+            geoBlockEnabled = result.rows[0].value === 'true';
+        } else {
+            geoBlockEnabled = false;
+        }
+    } catch (err) {
+        // Table may not exist yet — default to env var behavior
+        geoBlockEnabled = null;
+    }
+    return geoBlockEnabled;
+}
+
+async function setGeoBlockEnabled(enabled) {
+    const val = enabled ? 'true' : 'false';
+    await query(
+        `INSERT INTO settings (key, value, updated_at) VALUES ('geo_block_enabled', $1, CURRENT_TIMESTAMP)
+         ON CONFLICT (key) DO UPDATE SET value = $1, updated_at = CURRENT_TIMESTAMP`,
+        [val]
+    );
+    geoBlockEnabled = enabled;
+}
 
 // IPs que siempre están permitidas (localhost, Azure health checks, etc.)
 const WHITELISTED_IPS = [
@@ -55,12 +84,23 @@ const getClientIP = (req) => {
 };
 
 // Middleware de geo-bloqueo
-const geoBlock = (req, res, next) => {
+const geoBlock = async (req, res, next) => {
     if (process.env.NODE_ENV !== 'production') {
         return next();
     }
 
+    // Env var override: if GEO_BLOCK_DISABLED=true, always skip
     if (process.env.GEO_BLOCK_DISABLED === 'true') {
+        return next();
+    }
+
+    // Check DB setting (lazy-load on first request)
+    if (geoBlockEnabled === null) {
+        await loadGeoBlockSetting();
+    }
+
+    // If DB says geo-blocking is disabled, skip
+    if (geoBlockEnabled === false) {
         return next();
     }
 
@@ -104,4 +144,4 @@ const geoBlock = (req, res, next) => {
     next();
 };
 
-module.exports = { geoBlock, getClientIP, ALLOWED_COUNTRIES };
+module.exports = { geoBlock, getClientIP, ALLOWED_COUNTRIES, setGeoBlockEnabled, loadGeoBlockSetting };
