@@ -103,6 +103,10 @@ const publicDir = fs.existsSync(path.join(__dirname, '..', 'public'))
 // Admin panel: served at configurable path (defaults to /admin)
 // Set ADMIN_PATH env var to an obscure path (e.g. /panel-s3cr3t) to hide admin UI
 const adminPath = process.env.ADMIN_PATH || '/admin';
+if (adminPath !== '/admin') {
+    // Block default /admin path when using custom admin path
+    app.use('/admin', (req, res) => res.status(404).end());
+}
 app.use(adminPath, (req, res, next) => {
     res.setHeader('X-Robots-Tag', 'noindex, nofollow');
     next();
