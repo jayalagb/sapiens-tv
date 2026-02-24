@@ -1,4 +1,4 @@
-const { BlobServiceClient } = require('@azure/storage-blob');
+const { BlobServiceClient, BlobSASPermissions } = require('@azure/storage-blob');
 
 const connectionString = process.env.AZURE_STORAGE_CONNECTION_STRING;
 const containerName = process.env.AZURE_STORAGE_CONTAINER || 'videos';
@@ -46,4 +46,14 @@ async function deleteBlob(blobName) {
     await blockBlobClient.deleteIfExists();
 }
 
-module.exports = { uploadBlob, getBlobProperties, downloadBlobStream, deleteBlob };
+async function generateSasUrl(blobName, expiresInMinutes = 60) {
+    const client = getContainerClient();
+    const blobClient = client.getBlobClient(blobName);
+    const url = await blobClient.generateSasUrl({
+        permissions: BlobSASPermissions.parse('r'),
+        expiresOn: new Date(Date.now() + expiresInMinutes * 60 * 1000)
+    });
+    return url;
+}
+
+module.exports = { uploadBlob, getBlobProperties, downloadBlobStream, deleteBlob, generateSasUrl };

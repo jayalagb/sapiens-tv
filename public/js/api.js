@@ -68,5 +68,5 @@ async function apiRateVideo(uid, rating) {
 
 async function getStreamUrl(uid) {
     const data = await apiCall('/videos/' + uid + '/stream-token');
-    return API_BASE + '/videos/' + uid + '/stream?stoken=' + encodeURIComponent(data.stoken);
+    return data.url;
 }

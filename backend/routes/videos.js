@@ -5,8 +5,8 @@ const fs = require('fs');
 const os = require('os');
 const { v4: uuidv4 } = require('uuid');
 const { query } = require('../config/database');
-const { authenticateToken, requireApprovedUser, generateStreamToken, verifyStreamToken } = require('../middleware/auth');
-const { uploadBlob, getBlobProperties, downloadBlobStream, deleteBlob } = require('../config/blobStorage');
+const { authenticateToken, requireApprovedUser, verifyStreamToken } = require('../middleware/auth');
+const { uploadBlob, getBlobProperties, downloadBlobStream, deleteBlob, generateSasUrl } = require('../config/blobStorage');
 const { generateThumbnail } = require('../utils/thumbnail');
 
 const rateLimit = require('express-rate-limit');
@@ -215,19 +215,18 @@ router.get('/:uid/thumbnail', async (req, res) => {
     }
 });
 
-// GET /api/videos/:uid/stream-token - Get a short-lived token for streaming
+// GET /api/videos/:uid/stream-token - Get a SAS URL for direct streaming from Azure Blob Storage
 router.get('/:uid/stream-token', videoActionLimiter, requireApprovedUser, async (req, res) => {
     try {
-        const result = await query('SELECT uid FROM videos WHERE uid = $1', [req.params.uid]);
+        const result = await query('SELECT video_url FROM videos WHERE uid = $1', [req.params.uid]);
         if (result.rows.length === 0) {
             return res.status(404).json({ error: 'Video no encontrado' });
         }
-        const payload = req.user || req.admin;
-        const stoken = generateStreamToken(payload, req.params.uid);
-        res.json({ stoken });
+        const url = await generateSasUrl(result.rows[0].video_url, 60);
+        res.json({ url });
     } catch (error) {
         console.error('Stream token error:', error);
-        res.status(500).json({ error: 'Error al generar token de streaming' });
+        res.status(500).json({ error: 'Error al generar URL de streaming' });
     }
 });
 
