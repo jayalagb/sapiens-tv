@@ -34,7 +34,7 @@ router.post('/register', async (req, res) => {
             return res.status(400).json({ error: 'El usuario o email ya esta registrado' });
         }
 
-        const passwordHash = await bcrypt.hash(password, 10);
+        const passwordHash = await bcrypt.hash(password, 12);
 
         const result = await query(
             `INSERT INTO users (username, email, password_hash, status)
@@ -62,6 +62,9 @@ router.post('/register', async (req, res) => {
 });
 
 // POST /api/user-auth/login
+const MAX_FAILED_ATTEMPTS = 5;
+const LOCKOUT_MINUTES = 15;
+
 router.post('/login', async (req, res) => {
     try {
         const { username, password } = req.body;
@@ -71,7 +74,7 @@ router.post('/login', async (req, res) => {
         }
 
         const result = await query(
-            'SELECT id, uid, username, email, password_hash, status FROM users WHERE username = $1 OR email = $1',
+            'SELECT id, uid, username, email, password_hash, status, failed_attempts, locked_until FROM users WHERE username = $1 OR email = $1',
             [username.trim()]
         );
 
@@ -83,9 +86,30 @@ router.post('/login', async (req, res) => {
         }
 
         const user = result.rows[0];
+
+        // Check account lockout
+        if (user.locked_until && new Date(user.locked_until) > new Date()) {
+            const mins = Math.ceil((new Date(user.locked_until) - new Date()) / 60000);
+            return res.status(423).json({ error: `Cuenta bloqueada. Intenta en ${mins} minutos.` });
+        }
+
         const valid = await bcrypt.compare(password, user.password_hash);
         if (!valid) {
+            const attempts = (user.failed_attempts || 0) + 1;
+            if (attempts >= MAX_FAILED_ATTEMPTS) {
+                await query(
+                    'UPDATE users SET failed_attempts = $1, locked_until = CURRENT_TIMESTAMP + INTERVAL \'1 minute\' * $2 WHERE id = $3',
+                    [attempts, LOCKOUT_MINUTES, user.id]
+                );
+                return res.status(423).json({ error: `Cuenta bloqueada por ${LOCKOUT_MINUTES} minutos tras ${MAX_FAILED_ATTEMPTS} intentos fallidos.` });
+            }
+            await query('UPDATE users SET failed_attempts = $1 WHERE id = $2', [attempts, user.id]);
             return res.status(401).json({ error: 'Credenciales invalidas' });
+        }
+
+        // Reset failed attempts on successful login
+        if (user.failed_attempts > 0) {
+            await query('UPDATE users SET failed_attempts = 0, locked_until = NULL WHERE id = $1', [user.id]);
         }
 
         if (user.status === 'pending') {

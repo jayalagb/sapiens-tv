@@ -10,15 +10,14 @@ let usersFilter = 'all';
 let resetRequests = [];
 
 async function init() {
-    if (authToken) {
-        try {
-            admin = await apiGetMe();
-            currentScreen = 'dashboard';
-            await loadData();
-            await loadUserCounts();
-        } catch (e) {
-            logout();
-        }
+    try {
+        admin = await apiGetMe();
+        currentScreen = 'dashboard';
+        await loadData();
+        await loadUserCounts();
+    } catch (e) {
+        // No valid session cookie — show login
+        currentScreen = 'login';
     }
     render();
 }
@@ -615,8 +614,8 @@ async function navigateTo(screen) {
     render();
 }
 
-function handleLogout() {
-    logout();
+async function handleLogout() {
+    await logout();
     admin = null;
     currentScreen = 'login';
     render();
@@ -626,5 +625,8 @@ function escapeHtml(str) {
     if (!str) return '';
     return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
+
+// Clean up legacy localStorage token (now using HttpOnly cookies)
+localStorage.removeItem('sesamotv_admin_token');
 
 document.addEventListener('DOMContentLoaded', init);

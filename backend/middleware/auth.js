@@ -55,9 +55,20 @@ function verifyStreamToken(token) {
     return decoded;
 }
 
-function authenticateToken(req, res, next) {
+function extractAdminToken(req) {
     const authHeader = req.headers['authorization'];
-    const token = authHeader && authHeader.split(' ')[1];
+    if (authHeader) return authHeader.split(' ')[1];
+    // Fallback: read from HttpOnly cookie
+    const cookies = req.headers.cookie;
+    if (cookies) {
+        const match = cookies.split(';').map(c => c.trim()).find(c => c.startsWith('admin_token='));
+        if (match) return match.split('=')[1];
+    }
+    return null;
+}
+
+function authenticateToken(req, res, next) {
+    const token = extractAdminToken(req);
 
     if (!token) {
         return res.status(401).json({ error: 'Token requerido' });
@@ -73,18 +84,22 @@ function authenticateToken(req, res, next) {
 
 async function requireApprovedUser(req, res, next) {
     const authHeader = req.headers['authorization'];
-    const token = authHeader && authHeader.split(' ')[1];
+    const headerToken = authHeader && authHeader.split(' ')[1];
 
-    if (!token) {
-        return res.status(401).json({ error: 'Token requerido' });
+    // Try admin token first (from header or cookie)
+    const adminToken = headerToken || extractAdminToken(req);
+    if (adminToken) {
+        try {
+            req.admin = verifyAdminToken(adminToken);
+            return next();
+        } catch (err) {
+            // Not an admin token, try user token
+        }
     }
 
-    // Try admin token first
-    try {
-        req.admin = verifyAdminToken(token);
-        return next();
-    } catch (err) {
-        // Not an admin token, try user token
+    const token = headerToken;
+    if (!token) {
+        return res.status(401).json({ error: 'Token requerido' });
     }
 
     try {

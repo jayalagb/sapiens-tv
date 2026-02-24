@@ -106,7 +106,7 @@ router.put('/:uid/reset-password', async (req, res) => {
         const user = await query('SELECT id, username FROM users WHERE uid = $1', [req.params.uid]);
         if (user.rows.length === 0) return res.status(404).json({ error: 'Usuario no encontrado' });
 
-        const hash = await bcrypt.hash(password, 10);
+        const hash = await bcrypt.hash(password, 12);
         await query('UPDATE users SET password_hash = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2',
             [hash, user.rows[0].id]);
 
