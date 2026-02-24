@@ -1,11 +1,11 @@
 const express = require('express');
 const { query } = require('../config/database');
-const { authenticateToken } = require('../middleware/auth');
+const { authenticateToken, requireApprovedUser } = require('../middleware/auth');
 
 const router = express.Router();
 
-// GET /api/tags - List all tags (public)
-router.get('/', async (req, res) => {
+// GET /api/tags - List all tags (requires approved user or admin)
+router.get('/', requireApprovedUser, async (req, res) => {
     try {
         const result = await query(
             `SELECT t.id, t.name, COUNT(vt.video_id) as video_count

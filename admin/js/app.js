@@ -179,7 +179,7 @@ function renderUpload() {
                             ${tags.map(t => `
                                 <label class="tag-option">
                                     <input type="checkbox" value="${t.id}" class="upload-tag">
-                                    ${t.name}
+                                    ${escapeHtml(t.name)}
                                 </label>
                             `).join('')}
                         </div>
@@ -225,7 +225,7 @@ function renderEdit() {
                             ${tags.map(t => `
                                 <label class="tag-option">
                                     <input type="checkbox" value="${t.id}" class="edit-tag" ${videoTagIds.includes(t.id) ? 'checked' : ''}>
-                                    ${t.name}
+                                    ${escapeHtml(t.name)}
                                 </label>
                             `).join('')}
                         </div>
@@ -255,8 +255,8 @@ function renderTags() {
                     <div class="tags-list">
                         ${tags.map(t => `
                             <div class="tag-row">
-                                <span>${t.name} <small>(${t.video_count} videos)</small></span>
-                                <button class="btn btn-sm btn-danger" onclick="deleteTag(${t.id}, '${t.name}')">Eliminar</button>
+                                <span>${escapeHtml(t.name)} <small>(${t.video_count} videos)</small></span>
+                                <button class="btn btn-sm btn-danger" onclick="deleteTag(${t.id}, '${escapeHtml(t.name)}')">Eliminar</button>
                             </div>
                         `).join('')}
                     </div>
@@ -624,7 +624,7 @@ function handleLogout() {
 
 function escapeHtml(str) {
     if (!str) return '';
-    return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
 document.addEventListener('DOMContentLoaded', init);

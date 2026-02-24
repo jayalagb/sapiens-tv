@@ -425,8 +425,9 @@ router.post('/', authenticateToken, upload.single('video'), async (req, res) => 
 
         // Add tags if provided
         if (tags) {
-            const tagIds = JSON.parse(tags);
-            if (tagIds.length > 0) {
+            let tagIds;
+            try { tagIds = JSON.parse(tags); } catch { tagIds = []; }
+            if (Array.isArray(tagIds) && tagIds.length > 0) {
                 const validTags = await query('SELECT id FROM tags WHERE id = ANY($1)', [tagIds]);
                 const validIds = validTags.rows.map(r => r.id);
                 for (const tagId of validIds) {

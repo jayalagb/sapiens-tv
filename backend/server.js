@@ -100,7 +100,13 @@ const adminDir = fs.existsSync(path.join(__dirname, '..', 'admin'))
 const publicDir = fs.existsSync(path.join(__dirname, '..', 'public'))
     ? path.join(__dirname, '..', 'public')
     : path.join(__dirname, 'public');
-app.use('/admin', express.static(adminDir));
+// Admin panel: served at configurable path (defaults to /admin)
+// Set ADMIN_PATH env var to an obscure path (e.g. /panel-s3cr3t) to hide admin UI
+const adminPath = process.env.ADMIN_PATH || '/admin';
+app.use(adminPath, (req, res, next) => {
+    res.setHeader('X-Robots-Tag', 'noindex, nofollow');
+    next();
+}, express.static(adminDir));
 app.use(express.static(publicDir));
 
 // Geo-blocking (solo permite acceso desde España en producción)
@@ -139,6 +145,6 @@ app.listen(PORT, () => {
     console.log('='.repeat(40));
     console.log(`SesamoTV server running on port ${PORT}`);
     console.log(`Public: http://localhost:${PORT}`);
-    console.log(`Admin:  http://localhost:${PORT}/admin`);
+    console.log(`Admin:  http://localhost:${PORT}${adminPath}`);
     console.log('='.repeat(40));
 });
