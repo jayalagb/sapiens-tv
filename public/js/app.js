@@ -252,7 +252,7 @@ function renderHome() {
                 <button class="tag-chip ${!selectedTag ? 'active' : ''}" onclick="filterByTag(null)">Todos</button>
                 ${tags.map(t => `
                     <button class="tag-chip ${selectedTag === t.name ? 'active' : ''}"
-                            onclick="filterByTag(${JSON.stringify(t.name)})">${escapeHtml(t.name)} (${t.video_count})</button>
+                            data-tag="${escapeHtml(t.name)}">${escapeHtml(t.name)} (${t.video_count})</button>
                 `).join('')}
             </div>
 
@@ -325,7 +325,7 @@ async function renderPlayer() {
                 </div>
                 ${v.description ? `<p class="video-description">${escapeHtml(v.description)}</p>` : ''}
                 <div class="video-tags">
-                    ${(v.tags || []).map(t => `<span class="tag-badge clickable" onclick="goHome(); filterByTag(${JSON.stringify(t.name)})">${escapeHtml(t.name)}</span>`).join('')}
+                    ${(v.tags || []).map(t => `<span class="tag-badge clickable" data-tag="${escapeHtml(t.name)}">${escapeHtml(t.name)}</span>`).join('')}
                 </div>
             </div>
 
@@ -471,3 +471,12 @@ function escapeHtml(str) {
 }
 
 document.addEventListener('DOMContentLoaded', init);
+
+// Event delegation for tag clicks (avoids inline onclick quoting issues)
+document.addEventListener('click', function(e) {
+    const el = e.target.closest('[data-tag]');
+    if (!el) return;
+    const tagName = el.dataset.tag;
+    if (currentScreen === 'player') goHome();
+    filterByTag(tagName);
+});
