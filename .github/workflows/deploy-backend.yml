@@ -5,6 +5,8 @@ on:
     branches: [main]
     paths:
       - 'backend/**'
+      - 'admin/**'
+      - 'public/**'
   workflow_dispatch:
 
 jobs:
@@ -21,6 +23,11 @@ jobs:
       - name: Install dependencies
         run: npm ci
         working-directory: backend
+
+      - name: Bundle admin and public into backend
+        run: |
+          cp -r admin backend/admin
+          cp -r public backend/public
 
       - name: Deploy to Azure App Service
         uses: azure/webapps-deploy@v3
