@@ -2,7 +2,7 @@ let currentScreen = 'landing';
 let currentUser = null;
 let videos = [];
 let tags = [];
-let selectedTag = null;
+let selectedTags = [];
 let searchQuery = '';
 let currentVideo = null;
 
@@ -249,9 +249,9 @@ function renderHome() {
             </div>
 
             <div class="tags-bar">
-                <button class="tag-chip ${!selectedTag ? 'active' : ''}" onclick="filterByTag(null)">Todos</button>
+                <button class="tag-chip ${selectedTags.length === 0 ? 'active' : ''}" onclick="filterByTag(null)">Todos</button>
                 ${tags.map(t => `
-                    <button class="tag-chip ${selectedTag === t.name ? 'active' : ''}"
+                    <button class="tag-chip ${selectedTags.includes(t.name) ? 'active' : ''}"
                             data-tag="${escapeHtml(t.name)}">${escapeHtml(t.name)} (${t.video_count})</button>
                 `).join('')}
             </div>
@@ -420,16 +420,25 @@ function handleSearch(value) {
     searchQuery = value;
     clearTimeout(searchTimeout);
     searchTimeout = setTimeout(async () => {
-        selectedTag = null;
+        selectedTags = [];
         await loadVideos(value ? { search: value } : {});
         render();
     }, 300);
 }
 
 async function filterByTag(tagName) {
-    selectedTag = tagName;
+    if (tagName === null) {
+        selectedTags = [];
+    } else {
+        const idx = selectedTags.indexOf(tagName);
+        if (idx !== -1) {
+            selectedTags.splice(idx, 1);
+        } else {
+            selectedTags.push(tagName);
+        }
+    }
     searchQuery = '';
-    await loadVideos(tagName ? { tag: tagName } : {});
+    await loadVideos(selectedTags.length > 0 ? { tags: selectedTags.join(',') } : {});
     render();
 }
 

@@ -53,12 +53,25 @@ function thumbnailApiUrl(video) {
 // GET /api/videos - List videos (requires approved user)
 router.get('/', requireApprovedUser, async (req, res) => {
     try {
-        const { tag, search } = req.query;
+        const { tag, tags: tagsParam, search } = req.query;
         const limit = Math.min(Math.max(parseInt(req.query.limit) || 50, 1), 100);
         const offset = Math.max(parseInt(req.query.offset) || 0, 0);
         let sql, params;
 
-        if (tag) {
+        if (tagsParam) {
+            const tagNames = tagsParam.split(',').map(t => t.trim().toLowerCase()).filter(Boolean);
+            sql = `SELECT v.id, v.uid, v.title, v.description, v.video_url, v.thumbnail_url,
+                          v.duration, v.views_count, v.sort_order, v.rating, v.created_at
+                   FROM videos v
+                   JOIN video_tags vt ON v.id = vt.video_id
+                   JOIN tags t ON vt.tag_id = t.id
+                   WHERE t.name = ANY($1)
+                   GROUP BY v.id
+                   HAVING COUNT(DISTINCT t.id) = $2
+                   ORDER BY v.rating DESC, v.created_at DESC
+                   LIMIT $3 OFFSET $4`;
+            params = [tagNames, tagNames.length, limit, offset];
+        } else if (tag) {
             sql = `SELECT v.id, v.uid, v.title, v.description, v.video_url, v.thumbnail_url,
                           v.duration, v.views_count, v.sort_order, v.rating, v.created_at
                    FROM videos v
