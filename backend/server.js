@@ -83,15 +83,23 @@ app.use('/api/', (req, res, next) => {
         return next();
     }
     const origin = req.get('origin');
-    if (origin && !allowedOrigins.includes(origin)) {
+    if (!origin) {
+        // Allow same-origin requests (no Origin header) only if they have a valid cookie or auth header
+        // Block null-origin requests from sandboxed iframes / file:// protocol
+        const referer = req.get('referer');
+        if (referer && !allowedOrigins.some(o => referer.startsWith(o))) {
+            return res.status(403).json({ error: 'Origen no permitido' });
+        }
+        return next();
+    }
+    if (!allowedOrigins.includes(origin)) {
         return res.status(403).json({ error: 'Origen no permitido' });
     }
     next();
 });
 
 // Body parsing
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true }));
+app.use(express.json({ limit: '1mb' }));
 
 // Static files — resolve relative to parent in dev (repo layout) or same dir in Azure (flat deploy)
 const adminDir = fs.existsSync(path.join(__dirname, '..', 'admin'))

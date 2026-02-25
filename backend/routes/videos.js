@@ -82,13 +82,14 @@ router.get('/', requireApprovedUser, async (req, res) => {
                    LIMIT $2 OFFSET $3`;
             params = [tag.toLowerCase(), limit, offset];
         } else if (search) {
+            const escapedSearch = search.replace(/[%_\\]/g, '\\$&');
             sql = `SELECT id, uid, title, description, video_url, thumbnail_url,
                           duration, views_count, sort_order, rating, created_at
                    FROM videos
-                   WHERE title ILIKE $1 OR description ILIKE $1
+                   WHERE title ILIKE $1 ESCAPE '\\' OR description ILIKE $1 ESCAPE '\\'
                    ORDER BY rating DESC, created_at DESC
                    LIMIT $2 OFFSET $3`;
-            params = [`%${search}%`, limit, offset];
+            params = [`%${escapedSearch}%`, limit, offset];
         } else {
             sql = `SELECT id, uid, title, description, video_url, thumbnail_url,
                           duration, views_count, sort_order, rating, created_at
@@ -235,7 +236,7 @@ router.get('/:uid/stream-token', videoActionLimiter, requireApprovedUser, async 
         if (result.rows.length === 0) {
             return res.status(404).json({ error: 'Video no encontrado' });
         }
-        const url = await generateSasUrl(result.rows[0].video_url, 60);
+        const url = await generateSasUrl(result.rows[0].video_url, 20);
         res.json({ url });
     } catch (error) {
         console.error('Stream token error:', error);
@@ -262,11 +263,16 @@ router.get('/:uid/stream', async (req, res) => {
             return res.status(403).json({ error: 'Stream token invalido para este video' });
         }
 
-        // Verify user is still approved (not revoked since token was issued)
+        // Verify user/admin still exists and is authorized
         if (decoded.type === 'user') {
             const userCheck = await query('SELECT status FROM users WHERE uid = $1', [decoded.uid]);
             if (userCheck.rows.length === 0 || userCheck.rows[0].status !== 'approved') {
                 return res.status(403).json({ error: 'Usuario no autorizado' });
+            }
+        } else if (decoded.type === 'admin') {
+            const adminCheck = await query('SELECT id FROM admins WHERE uid = $1', [decoded.uid]);
+            if (adminCheck.rows.length === 0) {
+                return res.status(403).json({ error: 'Admin no autorizado' });
             }
         }
 
@@ -474,6 +480,9 @@ router.put('/reorder', authenticateToken, async (req, res) => {
         const { order } = req.body; // [{ uid, sortOrder }, ...]
         if (!Array.isArray(order)) {
             return res.status(400).json({ error: 'Array de orden requerido' });
+        }
+        if (order.length > 500) {
+            return res.status(400).json({ error: 'Demasiados elementos (max 500)' });
         }
 
         for (const item of order) {

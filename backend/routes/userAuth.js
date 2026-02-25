@@ -15,6 +15,10 @@ router.post('/register', async (req, res) => {
             return res.status(400).json({ error: 'Todos los campos son requeridos' });
         }
 
+        if (username.length > 50 || !/^[a-zA-Z0-9_-]+$/.test(username)) {
+            return res.status(400).json({ error: 'Usuario invalido. Solo letras, numeros, guion y guion bajo (max 50 caracteres)' });
+        }
+
         const passwordError = validatePassword(password);
         if (passwordError) {
             return res.status(400).json({ error: passwordError });
@@ -71,6 +75,9 @@ router.post('/login', async (req, res) => {
 
         if (!username || !password) {
             return res.status(400).json({ error: 'Usuario y contrasena requeridos' });
+        }
+        if (password.length > 128) {
+            return res.status(400).json({ error: 'Contrasena demasiado larga' });
         }
 
         const result = await query(

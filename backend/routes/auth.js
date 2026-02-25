@@ -14,6 +14,9 @@ router.post('/login', async (req, res) => {
         if (!username || !password) {
             return res.status(400).json({ error: 'Username y password requeridos' });
         }
+        if (password.length > 128) {
+            return res.status(400).json({ error: 'Contrasena demasiado larga' });
+        }
 
         const result = await query(
             'SELECT id, uid, username, email, password_hash, failed_attempts, locked_until FROM admins WHERE username = $1 OR email = $1',
