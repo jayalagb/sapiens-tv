@@ -13,6 +13,18 @@ const rateLimit = require('express-rate-limit');
 
 const router = express.Router();
 
+const PROVINCIAS = [
+    'Álava', 'Albacete', 'Alicante', 'Almería', 'Asturias', 'Ávila',
+    'Badajoz', 'Barcelona', 'Burgos', 'Cáceres', 'Cádiz', 'Cantabria',
+    'Castellón', 'Ciudad Real', 'Córdoba', 'A Coruña', 'Cuenca', 'Girona',
+    'Granada', 'Guadalajara', 'Gipuzkoa', 'Huelva', 'Huesca', 'Illes Balears',
+    'Jaén', 'León', 'Lleida', 'La Rioja', 'Lugo', 'Madrid', 'Málaga',
+    'Murcia', 'Navarra', 'Ourense', 'Palencia', 'Las Palmas', 'Pontevedra',
+    'Salamanca', 'Santa Cruz de Tenerife', 'Segovia', 'Sevilla', 'Soria',
+    'Tarragona', 'Teruel', 'Toledo', 'Valencia', 'Valladolid', 'Bizkaia',
+    'Zamora', 'Zaragoza', 'Ceuta', 'Melilla'
+];
+
 const videoActionLimiter = rateLimit({
     windowMs: 15 * 60 * 1000,
     max: 30,
@@ -53,50 +65,100 @@ function thumbnailApiUrl(video) {
 // GET /api/videos - List videos (requires approved user)
 router.get('/', requireApprovedUser, async (req, res) => {
     try {
-        const { tag, tags: tagsParam, search } = req.query;
+        const { tag, tags: tagsParam, search, location: locationParam, university: universityParam } = req.query;
         const limit = Math.min(Math.max(parseInt(req.query.limit) || 50, 1), 100);
         const offset = Math.max(parseInt(req.query.offset) || 0, 0);
         let sql, params;
 
+        // Parse multi-value location/university filters
+        const locationFilter = locationParam ? locationParam.split(',').map(l => l.trim()).filter(Boolean) : [];
+        const universityFilter = universityParam ? universityParam.split(',').map(u => u.trim()).filter(Boolean) : [];
+
+        // Build location/university WHERE clauses
+        const extraConditions = [];
+        const extraParams = [];
+        if (locationFilter.length > 0) {
+            extraParams.push(locationFilter);
+            extraConditions.push(`v.location = ANY($${extraParams.length + (tagsParam ? 4 : tag ? 3 : (search ? 3 : 2))})`);
+        }
+        if (universityFilter.length > 0) {
+            extraParams.push(universityFilter);
+            extraConditions.push(`v.university = ANY($${extraParams.length + (tagsParam ? 4 : tag ? 3 : (search ? 3 : 2))})`);
+        }
+
         if (tagsParam) {
             const tagNames = tagsParam.split(',').map(t => t.trim().toLowerCase()).filter(Boolean);
+            const locIdx = locationFilter.length > 0 ? 5 : null;
+            const univIdx = universityFilter.length > 0 ? (locIdx ? 6 : 5) : null;
+            const whereExtra = [
+                locIdx ? `v.location = ANY($${locIdx})` : null,
+                univIdx ? `v.university = ANY($${univIdx})` : null
+            ].filter(Boolean);
+            const havingClause = `HAVING COUNT(DISTINCT t.id) = $2`;
             sql = `SELECT v.id, v.uid, v.title, v.description, v.video_url, v.thumbnail_url,
-                          v.duration, v.views_count, v.sort_order, v.rating, v.created_at
+                          v.duration, v.views_count, v.sort_order, v.rating, v.location, v.university, v.created_at
                    FROM videos v
                    JOIN video_tags vt ON v.id = vt.video_id
                    JOIN tags t ON vt.tag_id = t.id
-                   WHERE t.name = ANY($1)
+                   WHERE t.name = ANY($1)${whereExtra.length > 0 ? ' AND ' + whereExtra.join(' AND ') : ''}
                    GROUP BY v.id
-                   HAVING COUNT(DISTINCT t.id) = $2
+                   ${havingClause}
                    ORDER BY v.rating DESC, v.created_at DESC
                    LIMIT $3 OFFSET $4`;
-            params = [tagNames, tagNames.length, limit, offset];
+            params = [tagNames, tagNames.length, limit, offset,
+                      ...(locationFilter.length > 0 ? [locationFilter] : []),
+                      ...(universityFilter.length > 0 ? [universityFilter] : [])];
         } else if (tag) {
+            const locIdx = locationFilter.length > 0 ? 4 : null;
+            const univIdx = universityFilter.length > 0 ? (locIdx ? 5 : 4) : null;
+            const whereExtra = [
+                locIdx ? `v.location = ANY($${locIdx})` : null,
+                univIdx ? `v.university = ANY($${univIdx})` : null
+            ].filter(Boolean);
             sql = `SELECT v.id, v.uid, v.title, v.description, v.video_url, v.thumbnail_url,
-                          v.duration, v.views_count, v.sort_order, v.rating, v.created_at
+                          v.duration, v.views_count, v.sort_order, v.rating, v.location, v.university, v.created_at
                    FROM videos v
                    JOIN video_tags vt ON v.id = vt.video_id
                    JOIN tags t ON vt.tag_id = t.id
-                   WHERE t.name = $1
+                   WHERE t.name = $1${whereExtra.length > 0 ? ' AND ' + whereExtra.join(' AND ') : ''}
                    ORDER BY v.rating DESC, v.created_at DESC
                    LIMIT $2 OFFSET $3`;
-            params = [tag.toLowerCase(), limit, offset];
+            params = [tag.toLowerCase(), limit, offset,
+                      ...(locationFilter.length > 0 ? [locationFilter] : []),
+                      ...(universityFilter.length > 0 ? [universityFilter] : [])];
         } else if (search) {
             const escapedSearch = search.replace(/[%_\\]/g, '\\$&');
+            const locIdx = locationFilter.length > 0 ? 4 : null;
+            const univIdx = universityFilter.length > 0 ? (locIdx ? 5 : 4) : null;
+            const whereExtra = [
+                locIdx ? `location = ANY($${locIdx})` : null,
+                univIdx ? `university = ANY($${univIdx})` : null
+            ].filter(Boolean);
             sql = `SELECT id, uid, title, description, video_url, thumbnail_url,
-                          duration, views_count, sort_order, rating, created_at
+                          duration, views_count, sort_order, rating, location, university, created_at
                    FROM videos
-                   WHERE title ILIKE $1 ESCAPE '\\' OR description ILIKE $1 ESCAPE '\\'
+                   WHERE (title ILIKE $1 ESCAPE '\\' OR description ILIKE $1 ESCAPE '\\')${whereExtra.length > 0 ? ' AND ' + whereExtra.join(' AND ') : ''}
                    ORDER BY rating DESC, created_at DESC
                    LIMIT $2 OFFSET $3`;
-            params = [`%${escapedSearch}%`, limit, offset];
+            params = [`%${escapedSearch}%`, limit, offset,
+                      ...(locationFilter.length > 0 ? [locationFilter] : []),
+                      ...(universityFilter.length > 0 ? [universityFilter] : [])];
         } else {
+            const locIdx = locationFilter.length > 0 ? 3 : null;
+            const univIdx = universityFilter.length > 0 ? (locIdx ? 4 : 3) : null;
+            const whereExtra = [
+                locIdx ? `location = ANY($${locIdx})` : null,
+                univIdx ? `university = ANY($${univIdx})` : null
+            ].filter(Boolean);
             sql = `SELECT id, uid, title, description, video_url, thumbnail_url,
-                          duration, views_count, sort_order, rating, created_at
+                          duration, views_count, sort_order, rating, location, university, created_at
                    FROM videos
+                   ${whereExtra.length > 0 ? 'WHERE ' + whereExtra.join(' AND ') : ''}
                    ORDER BY rating DESC, created_at DESC
                    LIMIT $1 OFFSET $2`;
-            params = [limit, offset];
+            params = [limit, offset,
+                      ...(locationFilter.length > 0 ? [locationFilter] : []),
+                      ...(universityFilter.length > 0 ? [universityFilter] : [])];
         }
 
         const result = await query(sql, params);
@@ -137,6 +199,8 @@ router.get('/', requireApprovedUser, async (req, res) => {
                 sortOrder: video.sort_order,
                 rating: parseFloat(video.rating) || 0,
                 userRating,
+                location: video.location || '',
+                university: video.university || '',
                 tags: tagsResult.rows,
                 createdAt: video.created_at
             };
@@ -149,12 +213,32 @@ router.get('/', requireApprovedUser, async (req, res) => {
     }
 });
 
+// GET /api/videos/filters - Get available filter values with counts (requires approved user)
+// MUST be registered before /:uid to avoid route conflict
+router.get('/filters', requireApprovedUser, async (req, res) => {
+    try {
+        const [locResult, univResult] = await Promise.all([
+            query(`SELECT location AS name, COUNT(*)::int AS count FROM videos
+                   WHERE location != '' GROUP BY location ORDER BY location`),
+            query(`SELECT university AS name, COUNT(*)::int AS count FROM videos
+                   WHERE university != '' GROUP BY university ORDER BY university`)
+        ]);
+        res.json({
+            locations: locResult.rows,
+            universities: univResult.rows
+        });
+    } catch (error) {
+        console.error('Get filters error:', error);
+        res.status(500).json({ error: 'Error al obtener filtros' });
+    }
+});
+
 // GET /api/videos/:uid - Get single video (requires approved user)
 router.get('/:uid', requireApprovedUser, async (req, res) => {
     try {
         const result = await query(
             `SELECT id, uid, title, description, video_url, thumbnail_url,
-                    duration, views_count, sort_order, rating, created_at
+                    duration, views_count, sort_order, rating, location, university, created_at
              FROM videos WHERE uid = $1`,
             [req.params.uid]
         );
@@ -195,6 +279,8 @@ router.get('/:uid', requireApprovedUser, async (req, res) => {
             sortOrder: video.sort_order,
             rating: parseFloat(video.rating) || 0,
             userRating,
+            location: video.location || '',
+            university: video.university || '',
             tags: tagsResult.rows,
             createdAt: video.created_at
         });
@@ -391,7 +477,7 @@ router.post('/', authenticateToken, upload.single('video'), async (req, res) => 
             return res.status(400).json({ error: 'Video requerido' });
         }
 
-        const { title, description, tags, rating } = req.body;
+        const { title, description, tags, rating, location, university } = req.body;
         if (!title || !title.trim()) {
             fs.unlinkSync(req.file.path);
             return res.status(400).json({ error: 'Titulo requerido' });
@@ -403,6 +489,14 @@ router.post('/', authenticateToken, upload.single('video'), async (req, res) => 
         if (description && description.length > 5000) {
             fs.unlinkSync(req.file.path);
             return res.status(400).json({ error: 'Descripcion demasiado larga (max 5000 caracteres)' });
+        }
+        if (!location || !PROVINCIAS.includes(location)) {
+            fs.unlinkSync(req.file.path);
+            return res.status(400).json({ error: 'Provincia invalida o no seleccionada' });
+        }
+        if (!university || !university.trim()) {
+            fs.unlinkSync(req.file.path);
+            return res.status(400).json({ error: 'Universidad requerida' });
         }
 
         const uid = uuidv4();
@@ -433,10 +527,10 @@ router.post('/', authenticateToken, upload.single('video'), async (req, res) => 
         const sortOrder = maxOrder.rows[0].next_order;
 
         const result = await query(
-            `INSERT INTO videos (uid, title, description, video_url, thumbnail_url, sort_order, rating, uploaded_by)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-             RETURNING id, uid, title, description, video_url, thumbnail_url, sort_order, rating, created_at`,
-            [uid, title, description || '', blobName, thumbnailBlobName, sortOrder, videoRating, req.admin.id]
+            `INSERT INTO videos (uid, title, description, video_url, thumbnail_url, sort_order, rating, uploaded_by, location, university)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+             RETURNING id, uid, title, description, video_url, thumbnail_url, sort_order, rating, location, university, created_at`,
+            [uid, title, description || '', blobName, thumbnailBlobName, sortOrder, videoRating, req.admin.id, location, university.trim()]
         );
 
         const video = result.rows[0];
@@ -462,6 +556,8 @@ router.post('/', authenticateToken, upload.single('video'), async (req, res) => 
             thumbnailUrl: thumbnailApiUrl(video),
             sortOrder: video.sort_order,
             rating: parseFloat(video.rating) || 0,
+            location: video.location || '',
+            university: video.university || '',
             createdAt: video.created_at
         });
     } catch (error) {
@@ -503,24 +599,31 @@ router.put('/reorder', authenticateToken, async (req, res) => {
 // PUT /api/videos/:uid - Edit video (admin)
 router.put('/:uid', authenticateToken, async (req, res) => {
     try {
-        const { title, description, tags, rating } = req.body;
+        const { title, description, tags, rating, location, university } = req.body;
         if (title && title.length > 255) {
             return res.status(400).json({ error: 'Titulo demasiado largo (max 255 caracteres)' });
         }
         if (description && description.length > 5000) {
             return res.status(400).json({ error: 'Descripcion demasiado larga (max 5000 caracteres)' });
         }
+        if (location !== undefined && location !== '' && !PROVINCIAS.includes(location)) {
+            return res.status(400).json({ error: 'Provincia invalida' });
+        }
         const videoRating = rating !== undefined ? Math.min(5, Math.max(0, parseFloat(rating) || 0)) : undefined;
+        const videoLocation = location !== undefined ? location : undefined;
+        const videoUniversity = university !== undefined ? university.trim() : undefined;
 
         const result = await query(
             `UPDATE videos SET
                 title = COALESCE($1, title),
                 description = COALESCE($2, description),
                 rating = COALESCE($4, rating),
+                location = COALESCE($5, location),
+                university = COALESCE($6, university),
                 updated_at = CURRENT_TIMESTAMP
              WHERE uid = $3
-             RETURNING id, uid, title, description, video_url, sort_order, rating`,
-            [title, description, req.params.uid, videoRating]
+             RETURNING id, uid, title, description, video_url, sort_order, rating, location, university`,
+            [title, description, req.params.uid, videoRating, videoLocation, videoUniversity]
         );
 
         if (result.rows.length === 0) {

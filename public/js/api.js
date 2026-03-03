@@ -47,6 +47,10 @@ async function apiGetVideos(params = {}) {
     return await apiCall('/videos' + (qs ? '?' + qs : ''));
 }
 
+async function apiGetFilters() {
+    return await apiCall('/videos/filters');
+}
+
 async function apiGetVideo(uid) {
     return await apiCall('/videos/' + uid);
 }

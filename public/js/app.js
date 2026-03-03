@@ -3,6 +3,9 @@ let currentUser = null;
 let videos = [];
 let tags = [];
 let selectedTags = [];
+let selectedLocations = [];
+let selectedUniversities = [];
+let availableFilters = { locations: [], universities: [] };
 let searchQuery = '';
 let currentVideo = null;
 
@@ -12,7 +15,7 @@ async function init() {
             currentUser = await apiGetMe();
             if (currentUser.status === 'approved') {
                 currentScreen = 'home';
-                await loadTags();
+                await Promise.all([loadTags(), loadFilters()]);
                 await loadVideos();
             } else {
                 localStorage.removeItem('sesamotv_user_token');
@@ -32,6 +35,10 @@ async function loadTags() {
 
 async function loadVideos(params = {}) {
     try { videos = await apiGetVideos(params); } catch (e) { videos = []; }
+}
+
+async function loadFilters() {
+    try { availableFilters = await apiGetFilters(); } catch (e) { availableFilters = { locations: [], universities: [] }; }
 }
 
 async function render() {
@@ -103,7 +110,7 @@ async function handleLogin() {
         localStorage.setItem('sesamotv_user_token', data.token);
         currentUser = data.user;
         currentScreen = 'home';
-        await loadTags();
+        await Promise.all([loadTags(), loadFilters()]);
         await loadVideos();
         render();
     } catch (e) {
@@ -232,53 +239,139 @@ async function handleResetRequest() {
 
 // --- Home ---
 
+function buildParams() {
+    const p = {};
+    if (selectedTags.length) p.tags = selectedTags.join(',');
+    if (selectedLocations.length) p.location = selectedLocations.join(',');
+    if (selectedUniversities.length) p.university = selectedUniversities.join(',');
+    if (searchQuery) p.search = searchQuery;
+    return p;
+}
+
+function toggleSidebar() {
+    const sidebar = document.getElementById('filter-sidebar');
+    if (sidebar) sidebar.classList.toggle('collapsed');
+}
+
+function toggleAccordion(id) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.classList.toggle('collapsed');
+    const btn = el.previousElementSibling;
+    if (btn) btn.classList.toggle('open');
+}
+
+async function toggleLocation(name) {
+    const idx = selectedLocations.indexOf(name);
+    if (idx !== -1) selectedLocations.splice(idx, 1);
+    else selectedLocations.push(name);
+    await loadVideos(buildParams());
+    render();
+}
+
+async function toggleUniversity(name) {
+    const idx = selectedUniversities.indexOf(name);
+    if (idx !== -1) selectedUniversities.splice(idx, 1);
+    else selectedUniversities.push(name);
+    await loadVideos(buildParams());
+    render();
+}
+
 function renderHome() {
     return `
-        <div class="container">
-            <header class="header">
-                <h1 class="logo">SesamoTV</h1>
-                <div class="header-right">
-                    <span class="user-name">${escapeHtml(currentUser?.username || '')}</span>
-                    <button class="btn btn-sm btn-outline" onclick="handleLogout()">Salir</button>
+        <div class="app-layout">
+            <aside class="filter-sidebar" id="filter-sidebar">
+                <div class="sidebar-header">
+                    <span>Filtros</span>
+                    <button class="sidebar-close" onclick="toggleSidebar()">&#10005;</button>
                 </div>
-            </header>
 
-            <div class="search-bar">
-                <input type="text" id="search-input" placeholder="Buscar videos..."
-                       value="${escapeHtml(searchQuery)}" oninput="handleSearch(this.value)">
-            </div>
-
-            <div class="tags-bar">
-                <button class="tag-chip ${selectedTags.length === 0 ? 'active' : ''}" onclick="filterByTag(null)">Todos</button>
-                ${tags.map(t => `
-                    <button class="tag-chip ${selectedTags.includes(t.name) ? 'active' : ''}"
-                            data-tag="${escapeHtml(t.name)}">${escapeHtml(t.name)} (${t.video_count})</button>
-                `).join('')}
-            </div>
-
-            <div class="video-grid">
-                ${videos.length === 0 ? '<p class="empty-msg">No hay videos disponibles</p>' :
-                  videos.map(v => `
-                    <div class="video-card" onclick="openVideo('${v.uid}')">
-                        <div class="video-thumb">
-                            ${v.thumbnailUrl ? `<img src="${v.thumbnailUrl}" alt="">` :
-                              `<div class="thumb-placeholder"><svg width="48" height="48" viewBox="0 0 24 24" fill="white"><path d="M8 5v14l11-7z"/></svg></div>`}
-                            ${v.duration ? `<span class="duration">${formatDuration(v.duration)}</span>` : ''}
-                        </div>
-                        <div class="video-info">
-                            <h3 class="video-title">${escapeHtml(v.title)}</h3>
-                            <div class="video-meta">
-                                <span>${v.views || 0} vistas</span>
-                                <span>${timeAgo(v.createdAt)}</span>
-                            </div>
-                            ${renderStars(v.rating || 0)}
-                            <div class="video-tags">
-                                ${(v.tags || []).map(t => `<span class="tag-badge">${escapeHtml(t.name)}</span>`).join('')}
-                            </div>
-                        </div>
+                <div class="filter-section">
+                    <button class="filter-toggle open" onclick="toggleAccordion('acc-prov')">
+                        Provincia <span class="chevron">&#9660;</span>
+                    </button>
+                    <div class="filter-list" id="acc-prov">
+                        ${availableFilters.locations.length === 0
+                          ? '<span class="filter-empty">Sin datos</span>'
+                          : availableFilters.locations.map(l => `
+                            <label class="filter-item">
+                                <input type="checkbox" value="${escapeHtml(l.name)}"
+                                    ${selectedLocations.includes(l.name) ? 'checked' : ''}
+                                    onchange="toggleLocation('${escapeHtml(l.name).replace(/'/g, "\\'")}')">
+                                ${escapeHtml(l.name)} <span class="filter-count">(${l.count})</span>
+                            </label>
+                          `).join('')}
                     </div>
-                  `).join('')}
-            </div>
+                </div>
+
+                <div class="filter-section">
+                    <button class="filter-toggle open" onclick="toggleAccordion('acc-univ')">
+                        Universidad <span class="chevron">&#9660;</span>
+                    </button>
+                    <div class="filter-list" id="acc-univ">
+                        ${availableFilters.universities.length === 0
+                          ? '<span class="filter-empty">Sin datos</span>'
+                          : availableFilters.universities.map(u => `
+                            <label class="filter-item">
+                                <input type="checkbox" value="${escapeHtml(u.name)}"
+                                    ${selectedUniversities.includes(u.name) ? 'checked' : ''}
+                                    onchange="toggleUniversity('${escapeHtml(u.name).replace(/'/g, "\\'")}')">
+                                ${escapeHtml(u.name)} <span class="filter-count">(${u.count})</span>
+                            </label>
+                          `).join('')}
+                    </div>
+                </div>
+            </aside>
+
+            <main class="main-content">
+                <div class="container">
+                    <header class="header">
+                        <button class="sidebar-toggle-btn" onclick="toggleSidebar()" title="Filtros">&#9776;</button>
+                        <h1 class="logo">SesamoTV</h1>
+                        <div class="header-right">
+                            <span class="user-name">${escapeHtml(currentUser?.username || '')}</span>
+                            <button class="btn btn-sm btn-outline" onclick="handleLogout()">Salir</button>
+                        </div>
+                    </header>
+
+                    <div class="search-bar">
+                        <input type="text" id="search-input" placeholder="Buscar videos..."
+                               value="${escapeHtml(searchQuery)}" oninput="handleSearch(this.value)">
+                    </div>
+
+                    <div class="tags-bar">
+                        <button class="tag-chip ${selectedTags.length === 0 ? 'active' : ''}" onclick="filterByTag(null)">Todos</button>
+                        ${tags.map(t => `
+                            <button class="tag-chip ${selectedTags.includes(t.name) ? 'active' : ''}"
+                                    data-tag="${escapeHtml(t.name)}">${escapeHtml(t.name)} (${t.video_count})</button>
+                        `).join('')}
+                    </div>
+
+                    <div class="video-grid">
+                        ${videos.length === 0 ? '<p class="empty-msg">No hay videos disponibles</p>' :
+                          videos.map(v => `
+                            <div class="video-card" onclick="openVideo('${v.uid}')">
+                                <div class="video-thumb">
+                                    ${v.thumbnailUrl ? `<img src="${v.thumbnailUrl}" alt="">` :
+                                      `<div class="thumb-placeholder"><svg width="48" height="48" viewBox="0 0 24 24" fill="white"><path d="M8 5v14l11-7z"/></svg></div>`}
+                                    ${v.duration ? `<span class="duration">${formatDuration(v.duration)}</span>` : ''}
+                                </div>
+                                <div class="video-info">
+                                    <h3 class="video-title">${escapeHtml(v.title)}</h3>
+                                    <div class="video-meta">
+                                        <span>${v.views || 0} vistas</span>
+                                        <span>${timeAgo(v.createdAt)}</span>
+                                    </div>
+                                    ${renderStars(v.rating || 0)}
+                                    <div class="video-tags">
+                                        ${(v.tags || []).map(t => `<span class="tag-badge">${escapeHtml(t.name)}</span>`).join('')}
+                                    </div>
+                                </div>
+                            </div>
+                          `).join('')}
+                    </div>
+                </div>
+            </main>
         </div>
     `;
 }
@@ -421,7 +514,7 @@ function handleSearch(value) {
     clearTimeout(searchTimeout);
     searchTimeout = setTimeout(async () => {
         selectedTags = [];
-        await loadVideos(value ? { search: value } : {});
+        await loadVideos(buildParams());
         render();
     }, 300);
 }
@@ -438,7 +531,7 @@ async function filterByTag(tagName) {
         }
     }
     searchQuery = '';
-    await loadVideos(selectedTags.length > 0 ? { tags: selectedTags.join(',') } : {});
+    await loadVideos(buildParams());
     render();
 }
 
@@ -447,6 +540,11 @@ function handleLogout() {
     currentUser = null;
     videos = [];
     tags = [];
+    selectedTags = [];
+    selectedLocations = [];
+    selectedUniversities = [];
+    availableFilters = { locations: [], universities: [] };
+    searchQuery = '';
     currentScreen = 'landing';
     render();
 }

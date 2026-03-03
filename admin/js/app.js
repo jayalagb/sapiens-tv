@@ -1,3 +1,15 @@
+const PROVINCIAS = [
+    'Álava', 'Albacete', 'Alicante', 'Almería', 'Asturias', 'Ávila',
+    'Badajoz', 'Barcelona', 'Burgos', 'Cáceres', 'Cádiz', 'Cantabria',
+    'Castellón', 'Ciudad Real', 'Córdoba', 'A Coruña', 'Cuenca', 'Girona',
+    'Granada', 'Guadalajara', 'Gipuzkoa', 'Huelva', 'Huesca', 'Illes Balears',
+    'Jaén', 'León', 'Lleida', 'La Rioja', 'Lugo', 'Madrid', 'Málaga',
+    'Murcia', 'Navarra', 'Ourense', 'Palencia', 'Las Palmas', 'Pontevedra',
+    'Salamanca', 'Santa Cruz de Tenerife', 'Segovia', 'Sevilla', 'Soria',
+    'Tarragona', 'Teruel', 'Toledo', 'Valencia', 'Valladolid', 'Bizkaia',
+    'Zamora', 'Zaragoza', 'Ceuta', 'Melilla'
+];
+
 let currentScreen = 'login';
 let admin = null;
 let videos = [];
@@ -177,6 +189,17 @@ function renderUpload() {
                         </div>
                     </div>
                     <div class="form-group">
+                        <label>Provincia *</label>
+                        <select id="upload-location" class="input">
+                            <option value="">Selecciona provincia...</option>
+                            ${PROVINCIAS.map(p => `<option value="${escapeHtml(p)}">${escapeHtml(p)}</option>`).join('')}
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Universidad *</label>
+                        <input type="text" id="upload-university" class="input" placeholder="Nombre de la universidad">
+                    </div>
+                    <div class="form-group">
                         <label>Tags</label>
                         <div class="tag-select">
                             ${tags.map(t => `
@@ -221,6 +244,17 @@ function renderEdit() {
                                    style="flex:1;">
                             <span id="edit-rating-val" style="min-width:24px;font-weight:600;">${v.rating || 0}</span>
                         </div>
+                    </div>
+                    <div class="form-group">
+                        <label>Provincia</label>
+                        <select id="edit-location" class="input">
+                            <option value="">Selecciona provincia...</option>
+                            ${PROVINCIAS.map(p => `<option value="${escapeHtml(p)}" ${v.location === p ? 'selected' : ''}>${escapeHtml(p)}</option>`).join('')}
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Universidad</label>
+                        <input type="text" id="edit-university" class="input" value="${escapeHtml(v.university || '')}" placeholder="Nombre de la universidad">
                     </div>
                     <div class="form-group">
                         <label>Tags</label>
@@ -483,16 +517,21 @@ async function handleUpload() {
     const title = document.getElementById('upload-title').value;
     if (!title) return alert('Titulo requerido');
 
+    const location = document.getElementById('upload-location').value;
+    if (!location) return alert('Selecciona una provincia');
+    const university = document.getElementById('upload-university').value.trim();
+    if (!university) return alert('Introduce la universidad');
+
     const description = document.getElementById('upload-desc').value;
     const rating = document.getElementById('upload-rating').value;
     const tagIds = [...document.querySelectorAll('.upload-tag:checked')].map(c => parseInt(c.value));
 
-    createJob(title, selectedFile, description, rating, tagIds);
+    createJob(title, selectedFile, description, rating, tagIds, location, university);
     selectedFile = null;
     navigateTo('dashboard');
 }
 
-function createJob(title, file, description, rating, tagIds) {
+function createJob(title, file, description, rating, tagIds, location, university) {
     const job = {
         id: ++jobIdCounter,
         title,
@@ -500,6 +539,8 @@ function createJob(title, file, description, rating, tagIds) {
         description,
         rating,
         tagIds,
+        location,
+        university,
         status: 'uploading',
         errorMessage: null,
         timestamp: Date.now()
@@ -520,6 +561,8 @@ async function executeJob(job) {
     formData.append('description', job.description);
     formData.append('rating', job.rating);
     formData.append('tags', JSON.stringify(job.tagIds));
+    formData.append('location', job.location);
+    formData.append('university', job.university);
 
     try {
         await apiUploadVideo(formData);
@@ -590,10 +633,12 @@ async function saveEdit() {
     const title = document.getElementById('edit-title').value;
     const description = document.getElementById('edit-desc').value;
     const rating = parseFloat(document.getElementById('edit-rating').value) || 0;
+    const location = document.getElementById('edit-location').value;
+    const university = document.getElementById('edit-university').value.trim();
     const tagIds = [...document.querySelectorAll('.edit-tag:checked')].map(c => parseInt(c.value));
 
     try {
-        await apiUpdateVideo(editingVideo.uid, { title, description, rating, tags: tagIds });
+        await apiUpdateVideo(editingVideo.uid, { title, description, rating, tags: tagIds, location, university });
         alert('Video actualizado');
         await loadData();
         navigateTo('dashboard');
