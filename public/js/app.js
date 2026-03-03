@@ -17,6 +17,8 @@ async function init() {
                 currentScreen = 'home';
                 await Promise.all([loadTags(), loadFilters()]);
                 await loadVideos();
+                const vParam = new URLSearchParams(window.location.search).get('v');
+                if (vParam) { await openVideo(vParam); return; }
             } else {
                 localStorage.removeItem('sesamotv_user_token');
                 currentScreen = 'landing';
@@ -112,6 +114,8 @@ async function handleLogin() {
         currentScreen = 'home';
         await Promise.all([loadTags(), loadFilters()]);
         await loadVideos();
+        const vParam = new URLSearchParams(window.location.search).get('v');
+        if (vParam) { await openVideo(vParam); return; }
         render();
     } catch (e) {
         errEl.textContent = e.message;
@@ -362,7 +366,10 @@ function renderHome() {
                                         <span>${v.views || 0} vistas</span>
                                         <span>${timeAgo(v.createdAt)}</span>
                                     </div>
-                                    ${renderStars(v.rating || 0)}
+                                    <div onclick="event.stopPropagation()" style="display:flex;align-items:center;gap:4px;">
+                                        ${renderLikeButton(v.uid, v.userLiked, v.likes)}
+                                        <button class="share-btn-card" onclick="handleShare('${v.uid}','${escapeHtml(v.title)}')">&#11014; Compartir</button>
+                                    </div>
                                     <div class="video-tags">
                                         ${(v.tags || []).map(t => `<span class="tag-badge">${escapeHtml(t.name)}</span>`).join('')}
                                     </div>
@@ -406,15 +413,9 @@ async function renderPlayer() {
                     <span>${v.views || 0} vistas</span>
                     <span>${timeAgo(v.createdAt)}</span>
                 </div>
-                <div class="player-rating-section">
-                    <div class="rating-avg">
-                        ${renderStars(v.rating || 0, 'lg')}
-                        <span class="rating-avg-label">${(v.rating || 0).toFixed(1)} promedio</span>
-                    </div>
-                    <div class="rating-user">
-                        <span class="rating-user-label">Tu puntuacion:</span>
-                        ${renderInteractiveStars(v.uid, v.userRating)}
-                    </div>
+                <div style="display:flex;align-items:center;gap:12px;margin:8px 0 4px;">
+                    ${renderLikeButton(v.uid, v.userLiked, v.likes)}
+                    <button class="share-btn-card" onclick="handleShare('${v.uid}','${escapeHtml(v.title)}')">&#11014; Compartir</button>
                 </div>
                 ${v.description ? `<p class="video-description">${escapeHtml(v.description)}</p>` : ''}
                 <div class="video-tags">
@@ -445,48 +446,101 @@ async function renderPlayer() {
     `;
 }
 
-// --- Stars ---
+// --- Like ---
 
-function renderStars(rating, size = 'sm') {
-    const full = Math.floor(rating);
-    const half = rating % 1 >= 0.5 ? 1 : 0;
-    const empty = 5 - full - half;
-    let html = `<div class="video-rating rating-${size}">`;
-    for (let i = 0; i < full; i++) html += '<span class="star full">&#9733;</span>';
-    if (half) html += '<span class="star half">&#9733;</span>';
-    for (let i = 0; i < empty; i++) html += '<span class="star empty">&#9733;</span>';
-    html += '</div>';
-    return html;
+function renderLikeButton(uid, liked, likes) {
+    const heartPath = "M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z";
+    const fill = liked ? '#FFE500' : 'none';
+    const stroke = liked ? '#FFE500' : 'currentColor';
+    return `<div class="like-section">
+        <button class="like-btn ${liked ? 'liked' : ''}" onclick="likeVideo('${uid}')">
+            <svg viewBox="0 0 24 24" fill="${fill}" stroke="${stroke}" stroke-width="2" width="20" height="20">
+                <path d="${heartPath}"/>
+            </svg>
+            <span class="like-count">${likes || 0}</span>
+        </button>
+    </div>`;
 }
 
-function renderInteractiveStars(videoUid, userRating) {
-    let html = '<div class="video-rating rating-lg rating-interactive">';
-    for (let i = 1; i <= 5; i++) {
-        const cls = userRating !== null && i <= userRating ? 'full' : 'empty';
-        html += `<span class="star ${cls}" onclick="rateVideo('${videoUid}', ${i})" data-star="${i}">&#9733;</span>`;
-    }
-    html += '</div>';
-    return html;
-}
-
-async function rateVideo(uid, rating) {
+async function likeVideo(uid) {
     try {
-        const data = await apiRateVideo(uid, rating);
-        // Update currentVideo with new values
-        if (currentVideo && currentVideo.uid === uid) {
-            currentVideo.rating = data.rating;
-            currentVideo.userRating = data.userRating;
-        }
-        // Update in videos list too
-        const idx = videos.findIndex(v => v.uid === uid);
-        if (idx !== -1) {
-            videos[idx].rating = data.rating;
-            videos[idx].userRating = data.userRating;
-        }
+        const data = await apiLikeVideo(uid);
+        if (currentVideo?.uid === uid) { currentVideo.likes = data.likes; currentVideo.userLiked = data.liked; }
+        const v = videos.find(v => v.uid === uid);
+        if (v) { v.likes = data.likes; v.userLiked = data.liked; }
         render();
-    } catch (e) {
-        console.error('Error rating video:', e);
+    } catch (e) { console.error('Like error:', e); }
+}
+
+// --- Share ---
+
+function handleShare(uid, title) {
+    const url = `${window.location.origin}/?v=${uid}`;
+    const menu = document.createElement('div');
+    menu.id = 'share-menu';
+    menu.className = 'share-menu-overlay';
+    menu.innerHTML = `
+        <div class="share-menu">
+            <div class="share-menu-header">
+                <span style="font-weight:600;font-size:16px;">Compartir</span>
+                <button class="share-menu-close" onclick="closeShareMenu()">&#10005;</button>
+            </div>
+            <div class="share-menu-options">
+                <button class="share-option" onclick="shareByEmail('${escapeHtml(url)}','${escapeHtml(title)}')">
+                    <span class="share-option-icon">&#9993;</span>
+                    <span class="share-option-text">Correo electronico</span>
+                </button>
+                <button class="share-option" onclick="shareByWhatsApp('${escapeHtml(url)}','${escapeHtml(title)}')">
+                    <span class="share-option-icon">&#128172;</span>
+                    <span class="share-option-text">WhatsApp</span>
+                </button>
+                <button class="share-option" onclick="copyShareLink('${escapeHtml(url)}')">
+                    <span class="share-option-icon">&#128279;</span>
+                    <span class="share-option-text">Copiar enlace</span>
+                </button>
+            </div>
+        </div>
+    `;
+    menu.addEventListener('click', function(e) { if (e.target === menu) closeShareMenu(); });
+    document.body.appendChild(menu);
+}
+
+function closeShareMenu() {
+    document.getElementById('share-menu')?.remove();
+}
+
+function copyShareLink(url) {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(url).then(() => {
+            closeShareMenu();
+            alert('Enlace copiado');
+        }).catch(() => fallbackCopy(url));
+    } else {
+        fallbackCopy(url);
     }
+}
+
+function fallbackCopy(url) {
+    const ta = document.createElement('textarea');
+    ta.value = url;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    try { document.execCommand('copy'); alert('Enlace copiado'); } catch (e) { alert('No se pudo copiar: ' + url); }
+    document.body.removeChild(ta);
+    closeShareMenu();
+}
+
+function shareByWhatsApp(url, title) {
+    window.open('https://wa.me/?text=' + encodeURIComponent('Mira este video en SesamoTV: ' + url), '_blank');
+    closeShareMenu();
+}
+
+function shareByEmail(url, title) {
+    window.open('mailto:?subject=' + encodeURIComponent(title) + '&body=' + encodeURIComponent('Mira este video en SesamoTV:\n' + url));
+    closeShareMenu();
 }
 
 // --- Actions ---

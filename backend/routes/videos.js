@@ -96,14 +96,14 @@ router.get('/', requireApprovedUser, async (req, res) => {
             ].filter(Boolean);
             const havingClause = `HAVING COUNT(DISTINCT t.id) = $2`;
             sql = `SELECT v.id, v.uid, v.title, v.description, v.video_url, v.thumbnail_url,
-                          v.duration, v.views_count, v.sort_order, v.rating, v.location, v.university, v.created_at
+                          v.duration, v.views_count, v.sort_order, v.likes_count, v.location, v.university, v.created_at
                    FROM videos v
                    JOIN video_tags vt ON v.id = vt.video_id
                    JOIN tags t ON vt.tag_id = t.id
                    WHERE t.name = ANY($1)${whereExtra.length > 0 ? ' AND ' + whereExtra.join(' AND ') : ''}
                    GROUP BY v.id
                    ${havingClause}
-                   ORDER BY v.rating DESC, v.created_at DESC
+                   ORDER BY v.likes_count DESC, v.created_at DESC
                    LIMIT $3 OFFSET $4`;
             params = [tagNames, tagNames.length, limit, offset,
                       ...(locationFilter.length > 0 ? [locationFilter] : []),
@@ -116,12 +116,12 @@ router.get('/', requireApprovedUser, async (req, res) => {
                 univIdx ? `v.university = ANY($${univIdx})` : null
             ].filter(Boolean);
             sql = `SELECT v.id, v.uid, v.title, v.description, v.video_url, v.thumbnail_url,
-                          v.duration, v.views_count, v.sort_order, v.rating, v.location, v.university, v.created_at
+                          v.duration, v.views_count, v.sort_order, v.likes_count, v.location, v.university, v.created_at
                    FROM videos v
                    JOIN video_tags vt ON v.id = vt.video_id
                    JOIN tags t ON vt.tag_id = t.id
                    WHERE t.name = $1${whereExtra.length > 0 ? ' AND ' + whereExtra.join(' AND ') : ''}
-                   ORDER BY v.rating DESC, v.created_at DESC
+                   ORDER BY v.likes_count DESC, v.created_at DESC
                    LIMIT $2 OFFSET $3`;
             params = [tag.toLowerCase(), limit, offset,
                       ...(locationFilter.length > 0 ? [locationFilter] : []),
@@ -135,10 +135,10 @@ router.get('/', requireApprovedUser, async (req, res) => {
                 univIdx ? `university = ANY($${univIdx})` : null
             ].filter(Boolean);
             sql = `SELECT id, uid, title, description, video_url, thumbnail_url,
-                          duration, views_count, sort_order, rating, location, university, created_at
+                          duration, views_count, sort_order, likes_count, location, university, created_at
                    FROM videos
                    WHERE (title ILIKE $1 ESCAPE '\\' OR description ILIKE $1 ESCAPE '\\')${whereExtra.length > 0 ? ' AND ' + whereExtra.join(' AND ') : ''}
-                   ORDER BY rating DESC, created_at DESC
+                   ORDER BY likes_count DESC, created_at DESC
                    LIMIT $2 OFFSET $3`;
             params = [`%${escapedSearch}%`, limit, offset,
                       ...(locationFilter.length > 0 ? [locationFilter] : []),
@@ -151,10 +151,10 @@ router.get('/', requireApprovedUser, async (req, res) => {
                 univIdx ? `university = ANY($${univIdx})` : null
             ].filter(Boolean);
             sql = `SELECT id, uid, title, description, video_url, thumbnail_url,
-                          duration, views_count, sort_order, rating, location, university, created_at
+                          duration, views_count, sort_order, likes_count, location, university, created_at
                    FROM videos
                    ${whereExtra.length > 0 ? 'WHERE ' + whereExtra.join(' AND ') : ''}
-                   ORDER BY rating DESC, created_at DESC
+                   ORDER BY likes_count DESC, created_at DESC
                    LIMIT $1 OFFSET $2`;
             params = [limit, offset,
                       ...(locationFilter.length > 0 ? [locationFilter] : []),
@@ -163,14 +163,14 @@ router.get('/', requireApprovedUser, async (req, res) => {
 
         const result = await query(sql, params);
 
-        // Get user id for rating lookup (only for user tokens, not admin)
+        // Get user id for like lookup (only for user tokens, not admin)
         let userId = null;
         if (req.user) {
             const userResult = await query('SELECT id FROM users WHERE uid = $1', [req.user.uid]);
             if (userResult.rows.length > 0) userId = userResult.rows[0].id;
         }
 
-        // Get tags and user rating for each video
+        // Get tags and userLiked for each video
         const videos = await Promise.all(result.rows.map(async (video) => {
             const tagsResult = await query(
                 `SELECT t.id, t.name FROM tags t
@@ -179,13 +179,13 @@ router.get('/', requireApprovedUser, async (req, res) => {
                 [video.id]
             );
 
-            let userRating = null;
+            let userLiked = false;
             if (userId) {
-                const ur = await query(
-                    'SELECT rating FROM video_ratings WHERE user_id = $1 AND video_id = $2',
+                const ul = await query(
+                    'SELECT id FROM video_likes WHERE user_id = $1 AND video_id = $2',
                     [userId, video.id]
                 );
-                if (ur.rows.length > 0) userRating = parseFloat(ur.rows[0].rating);
+                userLiked = ul.rows.length > 0;
             }
 
             return {
@@ -197,8 +197,8 @@ router.get('/', requireApprovedUser, async (req, res) => {
                 duration: video.duration,
                 views: video.views_count,
                 sortOrder: video.sort_order,
-                rating: parseFloat(video.rating) || 0,
-                userRating,
+                likes: video.likes_count || 0,
+                userLiked,
                 location: video.location || '',
                 university: video.university || '',
                 tags: tagsResult.rows,
@@ -238,7 +238,7 @@ router.get('/:uid', requireApprovedUser, async (req, res) => {
     try {
         const result = await query(
             `SELECT id, uid, title, description, video_url, thumbnail_url,
-                    duration, views_count, sort_order, rating, location, university, created_at
+                    duration, views_count, sort_order, likes_count, location, university, created_at
              FROM videos WHERE uid = $1`,
             [req.params.uid]
         );
@@ -255,16 +255,16 @@ router.get('/:uid', requireApprovedUser, async (req, res) => {
             [video.id]
         );
 
-        // Get user's own rating if authenticated as user
-        let userRating = null;
+        // Get user's like status if authenticated as user
+        let userLiked = false;
         if (req.user) {
             const userResult = await query('SELECT id FROM users WHERE uid = $1', [req.user.uid]);
             if (userResult.rows.length > 0) {
-                const ur = await query(
-                    'SELECT rating FROM video_ratings WHERE user_id = $1 AND video_id = $2',
+                const ul = await query(
+                    'SELECT id FROM video_likes WHERE user_id = $1 AND video_id = $2',
                     [userResult.rows[0].id, video.id]
                 );
-                if (ur.rows.length > 0) userRating = parseFloat(ur.rows[0].rating);
+                userLiked = ul.rows.length > 0;
             }
         }
 
@@ -277,8 +277,8 @@ router.get('/:uid', requireApprovedUser, async (req, res) => {
             duration: video.duration,
             views: video.views_count,
             sortOrder: video.sort_order,
-            rating: parseFloat(video.rating) || 0,
-            userRating,
+            likes: video.likes_count || 0,
+            userLiked,
             location: video.location || '',
             university: video.university || '',
             tags: tagsResult.rows,
@@ -414,15 +414,9 @@ router.get('/:uid/stream', async (req, res) => {
     }
 });
 
-// POST /api/videos/:uid/rate - Rate a video (requires approved user)
-router.post('/:uid/rate', videoActionLimiter, requireApprovedUser, async (req, res) => {
+// POST /api/videos/:uid/like - Toggle like on a video (requires approved user)
+router.post('/:uid/like', videoActionLimiter, requireApprovedUser, async (req, res) => {
     try {
-        const { rating } = req.body;
-        const ratingVal = parseFloat(rating);
-        if (isNaN(ratingVal) || ratingVal < 0 || ratingVal > 5) {
-            return res.status(400).json({ error: 'Rating debe ser entre 0 y 5' });
-        }
-
         // Get video id
         const videoResult = await query('SELECT id FROM videos WHERE uid = $1', [req.params.uid]);
         if (videoResult.rows.length === 0) {
@@ -437,26 +431,30 @@ router.post('/:uid/rate', videoActionLimiter, requireApprovedUser, async (req, r
         }
         const userId = userResult.rows[0].id;
 
-        // Upsert user rating
-        await query(
-            `INSERT INTO video_ratings (user_id, video_id, rating)
-             VALUES ($1, $2, $3)
-             ON CONFLICT (user_id, video_id) DO UPDATE SET rating = $3`,
-            [userId, videoId, ratingVal]
+        // Check if already liked
+        const existing = await query(
+            'SELECT id FROM video_likes WHERE user_id = $1 AND video_id = $2',
+            [userId, videoId]
         );
 
-        // Recalculate average and update videos.rating
-        const avgResult = await query(
-            'SELECT COALESCE(AVG(rating), 0) as avg_rating FROM video_ratings WHERE video_id = $1',
-            [videoId]
-        );
-        const avgRating = parseFloat(parseFloat(avgResult.rows[0].avg_rating).toFixed(1));
-        await query('UPDATE videos SET rating = $1 WHERE id = $2', [avgRating, videoId]);
+        let liked;
+        if (existing.rows.length > 0) {
+            // Unlike: remove and decrement
+            await query('DELETE FROM video_likes WHERE user_id = $1 AND video_id = $2', [userId, videoId]);
+            await query('UPDATE videos SET likes_count = GREATEST(0, likes_count - 1) WHERE id = $1', [videoId]);
+            liked = false;
+        } else {
+            // Like: insert and increment
+            await query('INSERT INTO video_likes (user_id, video_id) VALUES ($1, $2)', [userId, videoId]);
+            await query('UPDATE videos SET likes_count = likes_count + 1 WHERE id = $1', [videoId]);
+            liked = true;
+        }
 
-        res.json({ rating: avgRating, userRating: ratingVal });
+        const updatedVideo = await query('SELECT likes_count FROM videos WHERE id = $1', [videoId]);
+        res.json({ liked, likes: updatedVideo.rows[0].likes_count });
     } catch (error) {
-        console.error('Rate video error:', error);
-        res.status(500).json({ error: 'Error al puntuar video' });
+        console.error('Like video error:', error);
+        res.status(500).json({ error: 'Error al dar like al video' });
     }
 });
 
@@ -477,7 +475,7 @@ router.post('/', authenticateToken, upload.single('video'), async (req, res) => 
             return res.status(400).json({ error: 'Video requerido' });
         }
 
-        const { title, description, tags, rating, location, university } = req.body;
+        const { title, description, tags, location, university } = req.body;
         if (!title || !title.trim()) {
             fs.unlinkSync(req.file.path);
             return res.status(400).json({ error: 'Titulo requerido' });
@@ -501,7 +499,6 @@ router.post('/', authenticateToken, upload.single('video'), async (req, res) => 
 
         const uid = uuidv4();
         const blobName = req.file.filename; // uuid.ext
-        const videoRating = Math.min(5, Math.max(0, parseFloat(rating) || 0));
 
         // Generate thumbnail before uploading video (non-fatal)
         let thumbnailBlobName = null;
@@ -527,10 +524,10 @@ router.post('/', authenticateToken, upload.single('video'), async (req, res) => 
         const sortOrder = maxOrder.rows[0].next_order;
 
         const result = await query(
-            `INSERT INTO videos (uid, title, description, video_url, thumbnail_url, sort_order, rating, uploaded_by, location, university)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-             RETURNING id, uid, title, description, video_url, thumbnail_url, sort_order, rating, location, university, created_at`,
-            [uid, title, description || '', blobName, thumbnailBlobName, sortOrder, videoRating, req.admin.id, location, university.trim()]
+            `INSERT INTO videos (uid, title, description, video_url, thumbnail_url, sort_order, uploaded_by, location, university)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+             RETURNING id, uid, title, description, video_url, thumbnail_url, sort_order, likes_count, location, university, created_at`,
+            [uid, title, description || '', blobName, thumbnailBlobName, sortOrder, req.admin.id, location, university.trim()]
         );
 
         const video = result.rows[0];
@@ -555,7 +552,7 @@ router.post('/', authenticateToken, upload.single('video'), async (req, res) => 
             videoUrl: video.video_url,
             thumbnailUrl: thumbnailApiUrl(video),
             sortOrder: video.sort_order,
-            rating: parseFloat(video.rating) || 0,
+            likes: video.likes_count || 0,
             location: video.location || '',
             university: video.university || '',
             createdAt: video.created_at
@@ -599,7 +596,7 @@ router.put('/reorder', authenticateToken, async (req, res) => {
 // PUT /api/videos/:uid - Edit video (admin)
 router.put('/:uid', authenticateToken, async (req, res) => {
     try {
-        const { title, description, tags, rating, location, university } = req.body;
+        const { title, description, tags, location, university } = req.body;
         if (title && title.length > 255) {
             return res.status(400).json({ error: 'Titulo demasiado largo (max 255 caracteres)' });
         }
@@ -609,7 +606,6 @@ router.put('/:uid', authenticateToken, async (req, res) => {
         if (location !== undefined && location !== '' && !PROVINCIAS.includes(location)) {
             return res.status(400).json({ error: 'Provincia invalida' });
         }
-        const videoRating = rating !== undefined ? Math.min(5, Math.max(0, parseFloat(rating) || 0)) : undefined;
         const videoLocation = location !== undefined ? location : undefined;
         const videoUniversity = university !== undefined ? university.trim() : undefined;
 
@@ -617,13 +613,12 @@ router.put('/:uid', authenticateToken, async (req, res) => {
             `UPDATE videos SET
                 title = COALESCE($1, title),
                 description = COALESCE($2, description),
-                rating = COALESCE($4, rating),
-                location = COALESCE($5, location),
-                university = COALESCE($6, university),
+                location = COALESCE($4, location),
+                university = COALESCE($5, university),
                 updated_at = CURRENT_TIMESTAMP
              WHERE uid = $3
-             RETURNING id, uid, title, description, video_url, sort_order, rating, location, university`,
-            [title, description, req.params.uid, videoRating, videoLocation, videoUniversity]
+             RETURNING id, uid, title, description, video_url, sort_order, likes_count, location, university`,
+            [title, description, req.params.uid, videoLocation, videoUniversity]
         );
 
         if (result.rows.length === 0) {

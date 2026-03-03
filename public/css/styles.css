@@ -205,87 +205,39 @@ body {
     color: var(--white);
 }
 
-/* Rating Stars */
-.video-rating {
-    display: flex;
-    gap: 2px;
-    margin-bottom: 4px;
-}
+/* Like button */
+.like-section { display: flex; align-items: center; margin: 6px 0; }
+.like-btn { display: flex; align-items: center; gap: 6px; background: none; border: none;
+            cursor: pointer; font-size: 14px; color: #888; padding: 4px 8px;
+            border-radius: 20px; transition: all 0.2s; font-family: inherit; }
+.like-btn:hover { background: #fff8e1; }
+.like-btn.liked { color: #FFE500; }
+.like-count { font-weight: 600; }
 
-.video-rating .star {
-    line-height: 1;
-}
+/* Share button (card) */
+.share-btn-card { background: none; border: none; cursor: pointer; color: #888;
+                  font-size: 13px; padding: 4px 8px; border-radius: 6px; font-family: inherit; }
+.share-btn-card:hover { background: var(--gray-light); color: var(--black); }
 
-.video-rating .star.full {
-    color: #f5a623;
-}
-
-.video-rating .star.half {
-    color: #f5a623;
-    opacity: 0.6;
-}
-
-.video-rating .star.empty {
-    color: #ddd;
-}
-
-.video-rating.rating-sm .star {
-    font-size: 14px;
-}
-
-/* Interactive stars (player) */
-.rating-interactive .star {
-    cursor: pointer;
-    transition: color 0.15s, transform 0.15s;
-}
-
-.rating-interactive .star:hover,
-.rating-interactive .star:hover ~ .star {
-    transform: scale(1.15);
-}
-
-.rating-interactive:hover .star {
-    color: #f5a623;
-}
-
-.rating-interactive .star:hover ~ .star {
-    color: #ddd;
-}
-
-/* Player rating layout */
-.player-rating-section {
-    display: flex;
-    align-items: center;
-    gap: 24px;
-    flex-wrap: wrap;
-    margin: 8px 0 4px;
-}
-
-.rating-avg {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-}
-
-.rating-avg-label {
-    font-size: 14px;
-    color: var(--gray);
-}
-
-.rating-user {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-}
-
-.rating-user-label {
-    font-size: 14px;
-    color: var(--gray);
-}
-
-.video-rating.rating-lg .star {
-    font-size: 20px;
-}
+/* Share menu overlay */
+.share-menu-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5);
+                      z-index: 9998; display: flex; align-items: center;
+                      justify-content: center; animation: fadeIn 0.2s ease; }
+.share-menu { width: 90%; max-width: 320px; background: white; border-radius: 16px;
+              overflow: hidden; animation: scaleIn 0.2s ease; }
+.share-menu-header { display: flex; justify-content: space-between; align-items: center;
+                     padding: 16px 20px; border-bottom: 1px solid var(--gray-light); }
+.share-menu-close { width: 32px; height: 32px; background: none; border: none;
+                    font-size: 24px; cursor: pointer; color: var(--gray); }
+.share-menu-options { padding: 8px 0; }
+.share-option { display: flex; align-items: center; gap: 16px; width: 100%;
+                padding: 14px 20px; background: none; border: none;
+                font-size: 15px; font-family: inherit; cursor: pointer; text-align: left; }
+.share-option:hover { background: var(--gray-light); }
+.share-option-icon { width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; }
+.share-option-text { font-weight: 500; }
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes scaleIn { from { transform: scale(0.9); opacity: 0; } to { transform: scale(1); opacity: 1; } }
 
 .empty-msg {
     grid-column: 1 / -1;

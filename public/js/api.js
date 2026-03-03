@@ -63,11 +63,8 @@ async function apiTrackView(uid) {
     return await apiCall('/videos/' + uid + '/view', { method: 'POST' });
 }
 
-async function apiRateVideo(uid, rating) {
-    return await apiCall('/videos/' + uid + '/rate', {
-        method: 'POST',
-        body: JSON.stringify({ rating })
-    });
+async function apiLikeVideo(uid) {
+    return await apiCall('/videos/' + uid + '/like', { method: 'POST' });
 }
 
 async function getStreamUrl(uid) {

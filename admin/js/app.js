@@ -140,7 +140,7 @@ function renderDashboard() {
                             </div>
                             <div class="video-row-info">
                                 <div class="video-row-title">${escapeHtml(v.title)}</div>
-                                <div class="video-row-meta">${v.rating || 0}/5 &#9733; | ${v.views || 0} vistas | ${(v.tags||[]).map(t=>t.name).join(', ') || 'sin tags'}</div>
+                                <div class="video-row-meta">${v.likes || 0} &#10084; | ${v.views || 0} vistas | ${(v.tags||[]).map(t=>t.name).join(', ') || 'sin tags'}</div>
                             </div>
                             <div class="video-row-actions">
                                 <button class="btn btn-sm" onclick="startEdit('${v.uid}')">Editar</button>
@@ -178,15 +178,6 @@ function renderUpload() {
                     <div class="form-group">
                         <label>Descripcion</label>
                         <textarea id="upload-desc" class="input textarea" placeholder="Descripcion (opcional)"></textarea>
-                    </div>
-                    <div class="form-group">
-                        <label>Puntuacion</label>
-                        <div style="display:flex;align-items:center;gap:12px;">
-                            <input type="range" id="upload-rating" min="0" max="5" step="0.5" value="0"
-                                   oninput="document.getElementById('upload-rating-val').textContent=this.value"
-                                   style="flex:1;">
-                            <span id="upload-rating-val" style="min-width:24px;font-weight:600;">0</span>
-                        </div>
                     </div>
                     <div class="form-group">
                         <label>Provincia *</label>
@@ -237,13 +228,7 @@ function renderEdit() {
                         <textarea id="edit-desc" class="input textarea">${escapeHtml(v.description || '')}</textarea>
                     </div>
                     <div class="form-group">
-                        <label>Puntuacion</label>
-                        <div style="display:flex;align-items:center;gap:12px;">
-                            <input type="range" id="edit-rating" min="0" max="5" step="0.5" value="${v.rating || 0}"
-                                   oninput="document.getElementById('edit-rating-val').textContent=this.value"
-                                   style="flex:1;">
-                            <span id="edit-rating-val" style="min-width:24px;font-weight:600;">${v.rating || 0}</span>
-                        </div>
+                        <p class="likes-info">&#10084; ${v.likes || 0} likes</p>
                     </div>
                     <div class="form-group">
                         <label>Provincia</label>
@@ -523,21 +508,19 @@ async function handleUpload() {
     if (!university) return alert('Introduce la universidad');
 
     const description = document.getElementById('upload-desc').value;
-    const rating = document.getElementById('upload-rating').value;
     const tagIds = [...document.querySelectorAll('.upload-tag:checked')].map(c => parseInt(c.value));
 
-    createJob(title, selectedFile, description, rating, tagIds, location, university);
+    createJob(title, selectedFile, description, tagIds, location, university);
     selectedFile = null;
     navigateTo('dashboard');
 }
 
-function createJob(title, file, description, rating, tagIds, location, university) {
+function createJob(title, file, description, tagIds, location, university) {
     const job = {
         id: ++jobIdCounter,
         title,
         file,
         description,
-        rating,
         tagIds,
         location,
         university,
@@ -559,7 +542,6 @@ async function executeJob(job) {
     formData.append('video', job.file);
     formData.append('title', job.title);
     formData.append('description', job.description);
-    formData.append('rating', job.rating);
     formData.append('tags', JSON.stringify(job.tagIds));
     formData.append('location', job.location);
     formData.append('university', job.university);
@@ -632,13 +614,12 @@ async function startEdit(uid) {
 async function saveEdit() {
     const title = document.getElementById('edit-title').value;
     const description = document.getElementById('edit-desc').value;
-    const rating = parseFloat(document.getElementById('edit-rating').value) || 0;
     const location = document.getElementById('edit-location').value;
     const university = document.getElementById('edit-university').value.trim();
     const tagIds = [...document.querySelectorAll('.edit-tag:checked')].map(c => parseInt(c.value));
 
     try {
-        await apiUpdateVideo(editingVideo.uid, { title, description, rating, tags: tagIds, location, university });
+        await apiUpdateVideo(editingVideo.uid, { title, description, tags: tagIds, location, university });
         alert('Video actualizado');
         await loadData();
         navigateTo('dashboard');
