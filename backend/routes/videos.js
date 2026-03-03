@@ -585,6 +585,7 @@ router.post('/', authenticateToken, upload.single('video'), async (req, res) => 
             }
         }
 
+        await auditLog(req, 'upload_video', 'video', video.uid, `title: ${video.title}`);
         res.status(201).json({
             uid: video.uid,
             title: video.title,
@@ -680,6 +681,7 @@ router.put('/:uid', authenticateToken, async (req, res) => {
             }
         }
 
+        await auditLog(req, 'edit_video', 'video', video.uid, `title: ${video.title}`);
         res.json({ message: 'Video actualizado', uid: video.uid });
     } catch (error) {
         console.error('Update video error:', error);
