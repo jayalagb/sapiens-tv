@@ -536,6 +536,10 @@ router.post('/', authenticateToken, upload.single('video'), async (req, res) => 
             fs.unlinkSync(req.file.path);
             return res.status(400).json({ error: 'Universidad requerida' });
         }
+        if (university.trim().length > 50) {
+            fs.unlinkSync(req.file.path);
+            return res.status(400).json({ error: 'Universidad demasiado larga (max 50 caracteres)' });
+        }
 
         const uid = uuidv4();
         const blobName = req.file.filename; // uuid.ext
@@ -646,6 +650,9 @@ router.put('/:uid', authenticateToken, async (req, res) => {
         }
         if (location !== undefined && location !== '' && !PROVINCIAS.includes(location)) {
             return res.status(400).json({ error: 'Provincia invalida' });
+        }
+        if (university !== undefined && university.trim().length > 50) {
+            return res.status(400).json({ error: 'Universidad demasiado larga (max 50 caracteres)' });
         }
         const videoLocation = location !== undefined ? location : undefined;
         const videoUniversity = university !== undefined ? university.trim() : undefined;

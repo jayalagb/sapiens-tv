@@ -188,7 +188,7 @@ function renderUpload() {
                     </div>
                     <div class="form-group">
                         <label>Universidad *</label>
-                        <input type="text" id="upload-university" class="input" placeholder="Nombre de la universidad">
+                        <input type="text" id="upload-university" class="input" placeholder="Nombre de la universidad" maxlength="50">
                     </div>
                     <div class="form-group">
                         <label>Tags</label>
@@ -239,7 +239,7 @@ function renderEdit() {
                     </div>
                     <div class="form-group">
                         <label>Universidad</label>
-                        <input type="text" id="edit-university" class="input" value="${escapeHtml(v.university || '')}" placeholder="Nombre de la universidad">
+                        <input type="text" id="edit-university" class="input" value="${escapeHtml(v.university || '')}" placeholder="Nombre de la universidad" maxlength="50">
                     </div>
                     <div class="form-group">
                         <label>Tags</label>
