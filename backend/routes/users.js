@@ -1,10 +1,31 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
+const rateLimit = require('express-rate-limit');
 const { query } = require('../config/database');
 const { authenticateToken } = require('../middleware/auth');
 const validatePassword = require('../utils/validatePassword');
 
 const router = express.Router();
+
+async function auditLog(req, action, targetType, targetId, details) {
+    try {
+        const adminId = req.admin?.id || null;
+        const ip = req.ip || req.headers['x-forwarded-for'] || null;
+        await query(
+            `INSERT INTO admin_audit_log (admin_id, action, target_type, target_id, details, ip_addr)
+             VALUES ($1, $2, $3, $4, $5, $6)`,
+            [adminId, action, targetType, targetId, details || null, ip]
+        );
+    } catch (e) {
+        console.error('Audit log error (non-fatal):', e.message);
+    }
+}
+
+const adminActionLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 60,
+    message: { error: 'Demasiadas peticiones. Intenta de nuevo mas tarde.' }
+});
 
 router.use(authenticateToken);
 
@@ -95,7 +116,7 @@ router.get('/reset-requests', async (req, res) => {
 });
 
 // PUT /api/users/:uid/reset-password - Admin sets new password for user
-router.put('/:uid/reset-password', async (req, res) => {
+router.put('/:uid/reset-password', adminActionLimiter, async (req, res) => {
     try {
         const { password } = req.body;
         const passwordError = validatePassword(password);
@@ -114,6 +135,7 @@ router.put('/:uid/reset-password', async (req, res) => {
         await query("UPDATE password_resets SET status = 'completed' WHERE user_id = $1 AND status = 'pending'",
             [user.rows[0].id]);
 
+        await auditLog(req, 'reset_password', 'user', req.params.uid, `username: ${user.rows[0].username}`);
         res.json({ message: `Contrasena de ${user.rows[0].username} actualizada` });
     } catch (error) {
         console.error('Reset password error:', error);
@@ -122,7 +144,7 @@ router.put('/:uid/reset-password', async (req, res) => {
 });
 
 // PUT /api/users/:uid/approve
-router.put('/:uid/approve', async (req, res) => {
+router.put('/:uid/approve', adminActionLimiter, async (req, res) => {
     try {
         const result = await query(
             `UPDATE users SET status = 'approved', approved_at = CURRENT_TIMESTAMP,
@@ -131,6 +153,7 @@ router.put('/:uid/approve', async (req, res) => {
             [req.admin.id, req.params.uid]
         );
         if (result.rows.length === 0) return res.status(404).json({ error: 'Usuario no encontrado' });
+        await auditLog(req, 'approve_user', 'user', req.params.uid, `username: ${result.rows[0].username}`);
         res.json({ message: 'Usuario aprobado', user: result.rows[0] });
     } catch (error) {
         console.error('Approve user error:', error);
@@ -139,7 +162,7 @@ router.put('/:uid/approve', async (req, res) => {
 });
 
 // PUT /api/users/:uid/reject
-router.put('/:uid/reject', async (req, res) => {
+router.put('/:uid/reject', adminActionLimiter, async (req, res) => {
     try {
         const result = await query(
             `UPDATE users SET status = 'rejected', updated_at = CURRENT_TIMESTAMP
@@ -147,6 +170,7 @@ router.put('/:uid/reject', async (req, res) => {
             [req.params.uid]
         );
         if (result.rows.length === 0) return res.status(404).json({ error: 'Usuario no encontrado' });
+        await auditLog(req, 'reject_user', 'user', req.params.uid, `username: ${result.rows[0].username}`);
         res.json({ message: 'Usuario rechazado', user: result.rows[0] });
     } catch (error) {
         console.error('Reject user error:', error);
@@ -155,13 +179,14 @@ router.put('/:uid/reject', async (req, res) => {
 });
 
 // DELETE /api/users/:uid
-router.delete('/:uid', async (req, res) => {
+router.delete('/:uid', adminActionLimiter, async (req, res) => {
     try {
         const result = await query(
             'DELETE FROM users WHERE uid = $1 RETURNING username',
             [req.params.uid]
         );
         if (result.rows.length === 0) return res.status(404).json({ error: 'Usuario no encontrado' });
+        await auditLog(req, 'delete_user', 'user', req.params.uid, `username: ${result.rows[0].username}`);
         res.json({ message: `Usuario ${result.rows[0].username} eliminado` });
     } catch (error) {
         console.error('Delete user error:', error);

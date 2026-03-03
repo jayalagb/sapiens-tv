@@ -13,6 +13,20 @@ const rateLimit = require('express-rate-limit');
 
 const router = express.Router();
 
+async function auditLog(req, action, targetType, targetId, details) {
+    try {
+        const adminId = req.admin?.id || null;
+        const ip = req.ip || req.headers['x-forwarded-for'] || null;
+        await query(
+            `INSERT INTO admin_audit_log (admin_id, action, target_type, target_id, details, ip_addr)
+             VALUES ($1, $2, $3, $4, $5, $6)`,
+            [adminId, action, targetType, targetId, details || null, ip]
+        );
+    } catch (e) {
+        console.error('Audit log error (non-fatal):', e.message);
+    }
+}
+
 const PROVINCIAS = [
     'Álava', 'Albacete', 'Alicante', 'Almería', 'Asturias', 'Ávila',
     'Badajoz', 'Barcelona', 'Burgos', 'Cáceres', 'Cádiz', 'Cantabria',
@@ -56,6 +70,26 @@ const upload = multer({
         }
     }
 });
+
+// Validate video file magic bytes to prevent disguised uploads
+function isValidVideoMagicBytes(filePath) {
+    const fd = fs.openSync(filePath, 'r');
+    const buf = Buffer.alloc(16);
+    fs.readSync(fd, buf, 0, 16, 0);
+    fs.closeSync(fd);
+
+    // MP4 / MOV / M4V: 'ftyp' box at offset 4
+    if (buf.slice(4, 8).toString('ascii') === 'ftyp') return true;
+    // MP4 fallback: 'moov' or 'mdat' or 'free' at offset 4 (unusual but valid)
+    const box4 = buf.slice(4, 8).toString('ascii');
+    if (['moov', 'mdat', 'free', 'skip', 'wide'].includes(box4)) return true;
+    // WebM / MKV: EBML header 0x1A 0x45 0xDF 0xA3
+    if (buf[0] === 0x1A && buf[1] === 0x45 && buf[2] === 0xDF && buf[3] === 0xA3) return true;
+    // AVI: RIFF....AVI
+    if (buf.slice(0, 4).toString('ascii') === 'RIFF' && buf.slice(8, 11).toString('ascii') === 'AVI') return true;
+
+    return false;
+}
 
 // Transform thumbnail blob name to API URL
 function thumbnailApiUrl(video) {
@@ -475,6 +509,12 @@ router.post('/', authenticateToken, upload.single('video'), async (req, res) => 
             return res.status(400).json({ error: 'Video requerido' });
         }
 
+        // Validate actual file content via magic bytes
+        if (!isValidVideoMagicBytes(req.file.path)) {
+            fs.unlinkSync(req.file.path);
+            return res.status(400).json({ error: 'El archivo no es un video valido' });
+        }
+
         const { title, description, tags, location, university } = req.body;
         if (!title || !title.trim()) {
             fs.unlinkSync(req.file.path);
@@ -662,6 +702,7 @@ router.delete('/:uid', authenticateToken, async (req, res) => {
         }
 
         await query('DELETE FROM videos WHERE id = $1', [result.rows[0].id]);
+        await auditLog(req, 'delete_video', 'video', req.params.uid, null);
         res.json({ message: 'Video eliminado' });
     } catch (error) {
         console.error('Delete video error:', error);
