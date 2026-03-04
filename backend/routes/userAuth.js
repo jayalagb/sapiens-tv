@@ -81,7 +81,7 @@ router.post('/login', async (req, res) => {
         }
 
         const result = await query(
-            'SELECT id, uid, username, email, password_hash, status, failed_attempts, locked_until FROM users WHERE username = $1 OR email = $1',
+            'SELECT id, uid, username, email, password_hash, status, subscription_tier, subscription_expires_at, failed_attempts, locked_until FROM users WHERE username = $1 OR email = $1',
             [username.trim()]
         );
 
@@ -127,11 +127,17 @@ router.post('/login', async (req, res) => {
             return res.status(403).json({ error: 'Tu cuenta ha sido rechazada', status: 'rejected' });
         }
 
+        if (user.subscription_tier === 'premium' && user.subscription_expires_at && new Date(user.subscription_expires_at) < new Date()) {
+            await query("UPDATE users SET subscription_tier = 'free', subscription_expires_at = NULL WHERE id = $1", [user.id]);
+            user.subscription_tier = 'free';
+            user.subscription_expires_at = null;
+        }
+
         const token = generateUserToken(user);
 
         res.json({
             token,
-            user: { uid: user.uid, username: user.username, email: user.email, status: user.status }
+            user: { uid: user.uid, username: user.username, email: user.email, status: user.status, subscriptionTier: user.subscription_tier, subscriptionExpiresAt: user.subscription_expires_at }
         });
     } catch (error) {
         console.error('User login error:', error);
@@ -148,11 +154,17 @@ router.get('/me', async (req, res) => {
     try {
         const decoded = verifyUserToken(token);
         const result = await query(
-            'SELECT uid, username, email, status, created_at FROM users WHERE uid = $1',
+            'SELECT id, uid, username, email, status, subscription_tier, subscription_expires_at, created_at FROM users WHERE uid = $1',
             [decoded.uid]
         );
         if (result.rows.length === 0) return res.status(404).json({ error: 'Usuario no encontrado' });
-        res.json(result.rows[0]);
+        const u = result.rows[0];
+        if (u.subscription_tier === 'premium' && u.subscription_expires_at && new Date(u.subscription_expires_at) < new Date()) {
+            await query("UPDATE users SET subscription_tier = 'free', subscription_expires_at = NULL WHERE id = $1", [u.id]);
+            u.subscription_tier = 'free';
+            u.subscription_expires_at = null;
+        }
+        res.json({ uid: u.uid, username: u.username, email: u.email, status: u.status, subscriptionTier: u.subscription_tier, subscriptionExpiresAt: u.subscription_expires_at, createdAt: u.created_at });
     } catch (err) {
         return res.status(403).json({ error: 'Token invalido' });
     }

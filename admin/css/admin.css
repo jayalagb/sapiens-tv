@@ -457,3 +457,58 @@ body {
 @keyframes job-spin {
     to { transform: rotate(360deg); }
 }
+
+/* --- Subscription Tier --- */
+
+.tier-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 0.75em;
+    font-weight: 700;
+    margin-left: 6px;
+    vertical-align: middle;
+}
+
+.tier-premium {
+    background: #fef3c7;
+    color: #92400e;
+    border: 1px solid #f5d76e;
+}
+
+.tier-free {
+    background: #f3f4f6;
+    color: #6b7280;
+    border: 1px solid #d1d5db;
+}
+
+.btn-tier {
+    border: 1px solid #f5a623;
+    color: #c07800;
+    background: transparent;
+    border-radius: 4px;
+    padding: 4px 10px;
+    font-size: 0.82em;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.btn-tier:hover {
+    background: #f5a623;
+    color: #fff;
+}
+
+.tier-expiry {
+    display: block;
+    font-size: 0.78em;
+    color: #888;
+    margin-top: 2px;
+}
+
+.tier-expiry-warning {
+    color: #d97706;
+}
+
+.tier-expiry-expired {
+    color: #dc2626;
+}

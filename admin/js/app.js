@@ -341,6 +341,7 @@ function renderUsers() {
                             </div>
                             <div class="user-status">
                                 <span class="status-badge status-${u.status}">${getStatusLabel(u.status)}</span>
+                                ${u.status === 'approved' ? `<span class="tier-badge ${u.subscriptionTier === 'premium' ? 'tier-premium' : 'tier-free'}">${u.subscriptionTier === 'premium' ? 'Premium' : 'Free'}</span>${renderExpiryBadge(u)}` : ''}
                             </div>
                             <div class="user-actions">
                                 ${u.status === 'pending' ? `
@@ -348,7 +349,10 @@ function renderUsers() {
                                     <button class="btn btn-sm btn-danger" onclick="rejectUser('${u.uid}', '${escapeHtml(u.username)}')">Rechazar</button>
                                 ` : u.status === 'rejected' ? `
                                     <button class="btn btn-sm btn-success" onclick="approveUser('${u.uid}', '${escapeHtml(u.username)}')">Aprobar</button>
-                                ` : ''}
+                                ` : `
+                                    <button class="btn btn-sm btn-tier" onclick="changeSubscriptionTier('${u.uid}', '${escapeHtml(u.username)}', '${u.subscriptionTier}')">${u.subscriptionTier === 'premium' ? 'Hacer Free' : '&#11088; Hacer Premium'}</button>
+                                    ${u.subscriptionTier === 'premium' ? `<button class="btn btn-sm" onclick="editSubscriptionExpiry('${u.uid}', '${escapeHtml(u.username)}', '${u.subscriptionExpiresAt || ''}')">Fecha cad.</button>` : ''}
+                                `}
                                 <button class="btn btn-sm" onclick="resetPassword('${u.uid}', '${escapeHtml(u.username)}')">Reset Pass</button>
                                 <button class="btn btn-sm btn-danger" onclick="deleteUser('${u.uid}', '${escapeHtml(u.username)}')">Eliminar</button>
                             </div>
@@ -403,6 +407,59 @@ async function deleteUser(uid, username) {
     if (!confirm(`ELIMINAR usuario "${username}"? Esta accion no se puede deshacer.`)) return;
     try {
         await apiDeleteUser(uid);
+        await loadUsers(usersFilter);
+        render();
+    } catch (e) { alert('Error: ' + e.message); }
+}
+
+function renderExpiryBadge(u) {
+    if (u.subscriptionTier !== 'premium') return '';
+    if (!u.subscriptionExpiresAt) return `<span class="tier-expiry">sin caducidad</span>`;
+    const exp = new Date(u.subscriptionExpiresAt);
+    const now = new Date();
+    const diffDays = Math.ceil((exp - now) / 86400000);
+    const label = 'hasta ' + exp.toLocaleDateString('es-ES');
+    if (diffDays < 0) return `<span class="tier-expiry tier-expiry-expired">${label}</span>`;
+    if (diffDays <= 7) return `<span class="tier-expiry tier-expiry-warning">${label}</span>`;
+    return `<span class="tier-expiry">${label}</span>`;
+}
+
+async function changeSubscriptionTier(uid, username, currentTier) {
+    const newTier = currentTier === 'premium' ? 'free' : 'premium';
+    const label = newTier === 'premium' ? 'Premium' : 'Free';
+    let expiresAt = null;
+    if (newTier === 'premium') {
+        const dateInput = prompt(`Fecha de caducidad para "${username}" (YYYY-MM-DD, en blanco = sin caducidad):`);
+        if (dateInput === null) return;
+        if (dateInput.trim()) {
+            if (!/^\d{4}-\d{2}-\d{2}$/.test(dateInput.trim()) || isNaN(new Date(dateInput.trim()).getTime())) {
+                return alert('Formato de fecha invalido. Usa YYYY-MM-DD o deja en blanco.');
+            }
+            expiresAt = dateInput.trim();
+        }
+    } else {
+        if (!confirm(`Cambiar suscripcion de "${username}" a ${label}?`)) return;
+    }
+    try {
+        await apiChangeSubscription(uid, newTier, expiresAt);
+        await loadUsers(usersFilter);
+        render();
+    } catch (e) { alert('Error: ' + e.message); }
+}
+
+async function editSubscriptionExpiry(uid, username, currentExpiry) {
+    const current = currentExpiry ? new Date(currentExpiry).toISOString().slice(0, 10) : '';
+    const dateInput = prompt(`Fecha de caducidad para "${username}" (YYYY-MM-DD, en blanco = sin caducidad):`, current);
+    if (dateInput === null) return;
+    let expiresAt = null;
+    if (dateInput.trim()) {
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(dateInput.trim()) || isNaN(new Date(dateInput.trim()).getTime())) {
+            return alert('Formato de fecha invalido. Usa YYYY-MM-DD o deja en blanco.');
+        }
+        expiresAt = dateInput.trim();
+    }
+    try {
+        await apiChangeSubscription(uid, 'premium', expiresAt);
         await loadUsers(usersFilter);
         render();
     } catch (e) { alert('Error: ' + e.message); }

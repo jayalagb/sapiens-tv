@@ -711,3 +711,35 @@ body {
         min-width: 0;
     }
 }
+
+/* --- Subscription Tier --- */
+
+.btn-premium-cta {
+    background: linear-gradient(135deg, #f5a623 0%, #f0d000 100%);
+    color: #333;
+    border: none;
+    border-radius: 20px;
+    padding: 6px 14px;
+    font-size: 0.85em;
+    font-weight: 700;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.btn-premium-cta:hover {
+    background: linear-gradient(135deg, #e09010 0%, #d4b800 100%);
+}
+
+.free-tier-banner {
+    background: #fffbeb;
+    border: 1px solid #fde68a;
+    border-radius: 8px;
+    padding: 10px 16px;
+    margin-bottom: 16px;
+    font-size: 0.9em;
+    color: #78350f;
+}
+
+.free-tier-banner a {
+    color: #92400e;
+}

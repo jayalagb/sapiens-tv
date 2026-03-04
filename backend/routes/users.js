@@ -37,8 +37,8 @@ router.get('/', async (req, res) => {
         const offset = Math.max(parseInt(req.query.offset) || 0, 0);
 
         let sql = `
-            SELECT u.uid, u.username, u.email, u.status,
-                   u.created_at, u.approved_at,
+            SELECT u.uid, u.username, u.email, u.status, u.subscription_tier,
+                   u.subscription_expires_at, u.created_at, u.approved_at,
                    a.username as approved_by_username
             FROM users u
             LEFT JOIN admins a ON u.approved_by = a.id
@@ -80,6 +80,8 @@ router.get('/', async (req, res) => {
                 username: u.username,
                 email: u.email,
                 status: u.status,
+                subscriptionTier: u.subscription_tier,
+                subscriptionExpiresAt: u.subscription_expires_at,
                 createdAt: u.created_at,
                 approvedAt: u.approved_at,
                 approvedBy: u.approved_by_username
@@ -175,6 +177,40 @@ router.put('/:uid/reject', adminActionLimiter, async (req, res) => {
     } catch (error) {
         console.error('Reject user error:', error);
         res.status(500).json({ error: 'Error al rechazar usuario' });
+    }
+});
+
+// PUT /api/users/:uid/subscription
+router.put('/:uid/subscription', adminActionLimiter, async (req, res) => {
+    try {
+        const { tier, expiresAt } = req.body;
+        if (!tier || !['free', 'premium'].includes(tier)) {
+            return res.status(400).json({ error: 'tier debe ser "free" o "premium"' });
+        }
+
+        let expiresAtValue = null;
+        if (tier === 'premium' && expiresAt) {
+            const parsed = new Date(expiresAt);
+            if (isNaN(parsed.getTime())) {
+                return res.status(400).json({ error: 'expiresAt debe ser una fecha ISO valida' });
+            }
+            expiresAtValue = parsed.toISOString();
+        }
+
+        const result = await query(
+            `UPDATE users SET subscription_tier = $1, subscription_expires_at = $2, updated_at = CURRENT_TIMESTAMP
+             WHERE uid = $3 RETURNING uid, username, subscription_tier`,
+            [tier, expiresAtValue, req.params.uid]
+        );
+        if (result.rows.length === 0) return res.status(404).json({ error: 'Usuario no encontrado' });
+
+        const expiryDetail = expiresAtValue ? `, expires: ${expiresAtValue}` : '';
+        await auditLog(req, 'change_subscription', 'user', req.params.uid,
+            `username: ${result.rows[0].username}, tier: ${tier}${expiryDetail}`);
+        res.json({ message: `Suscripcion de ${result.rows[0].username} actualizada a ${tier}`, subscriptionTier: tier, subscriptionExpiresAt: expiresAtValue });
+    } catch (error) {
+        console.error('Change subscription error:', error);
+        res.status(500).json({ error: 'Error al cambiar suscripcion' });
     }
 });
 

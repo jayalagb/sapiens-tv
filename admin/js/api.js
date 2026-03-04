@@ -111,3 +111,10 @@ async function apiSetGeoBlocking(enabled) {
 async function logout() {
     try { await apiCall('/auth/logout', { method: 'POST' }); } catch (e) { /* ignore */ }
 }
+
+async function apiChangeSubscription(uid, tier, expiresAt = null) {
+    return await apiCall('/users/' + uid + '/subscription', {
+        method: 'PUT',
+        body: JSON.stringify({ tier, expiresAt })
+    });
+}

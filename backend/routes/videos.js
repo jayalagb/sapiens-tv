@@ -99,6 +99,64 @@ function thumbnailApiUrl(video) {
 // GET /api/videos - List videos (requires approved user)
 router.get('/', requireApprovedUser, async (req, res) => {
     try {
+        // Free-tier short-circuit: return top 3 by views + top 1 by likes
+        if (req.query.free_tier === 'true') {
+            const top3 = await query(
+                `SELECT id, uid, title, description, video_url, thumbnail_url,
+                        duration, views_count, sort_order, likes_count, location, university, created_at
+                 FROM videos ORDER BY views_count DESC LIMIT 3`
+            );
+            const top3ids = top3.rows.map(r => r.id);
+            const top1 = await query(
+                `SELECT id, uid, title, description, video_url, thumbnail_url,
+                        duration, views_count, sort_order, likes_count, location, university, created_at
+                 FROM videos WHERE id != ALL($1) ORDER BY likes_count DESC LIMIT 1`,
+                [top3ids]
+            );
+            const freeRows = [...top3.rows, ...top1.rows];
+
+            let userId = null;
+            if (req.user) {
+                const userResult = await query('SELECT id FROM users WHERE uid = $1', [req.user.uid]);
+                if (userResult.rows.length > 0) userId = userResult.rows[0].id;
+            }
+
+            const freeVideos = await Promise.all(freeRows.map(async (video) => {
+                const tagsResult = await query(
+                    `SELECT t.id, t.name FROM tags t
+                     JOIN video_tags vt ON t.id = vt.tag_id
+                     WHERE vt.video_id = $1`,
+                    [video.id]
+                );
+                let userLiked = false;
+                if (userId) {
+                    const ul = await query(
+                        'SELECT id FROM video_likes WHERE user_id = $1 AND video_id = $2',
+                        [userId, video.id]
+                    );
+                    userLiked = ul.rows.length > 0;
+                }
+                return {
+                    uid: video.uid,
+                    title: video.title,
+                    description: video.description,
+                    videoUrl: video.video_url,
+                    thumbnailUrl: thumbnailApiUrl(video),
+                    duration: video.duration,
+                    views: video.views_count,
+                    sortOrder: video.sort_order,
+                    likes: video.likes_count || 0,
+                    userLiked,
+                    location: video.location || '',
+                    university: video.university || '',
+                    tags: tagsResult.rows,
+                    createdAt: video.created_at
+                };
+            }));
+
+            return res.json(freeVideos);
+        }
+
         const { tag, tags: tagsParam, search, location: locationParam, university: universityParam } = req.query;
         const limit = Math.min(Math.max(parseInt(req.query.limit) || 50, 1), 100);
         const offset = Math.max(parseInt(req.query.offset) || 0, 0);

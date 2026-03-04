@@ -15,8 +15,12 @@ async function init() {
             currentUser = await apiGetMe();
             if (currentUser.status === 'approved') {
                 currentScreen = 'home';
-                await Promise.all([loadTags(), loadFilters()]);
-                await loadVideos();
+                if (currentUser.subscriptionTier === 'free') {
+                    await loadVideos({ free_tier: 'true' });
+                } else {
+                    await Promise.all([loadTags(), loadFilters()]);
+                    await loadVideos();
+                }
                 const vParam = new URLSearchParams(window.location.search).get('v');
                 if (vParam) { await openVideo(vParam); return; }
             } else {
@@ -112,8 +116,12 @@ async function handleLogin() {
         localStorage.setItem('sesamotv_user_token', data.token);
         currentUser = data.user;
         currentScreen = 'home';
-        await Promise.all([loadTags(), loadFilters()]);
-        await loadVideos();
+        if (currentUser.subscriptionTier === 'free') {
+            await loadVideos({ free_tier: 'true' });
+        } else {
+            await Promise.all([loadTags(), loadFilters()]);
+            await loadVideos();
+        }
         const vParam = new URLSearchParams(window.location.search).get('v');
         if (vParam) { await openVideo(vParam); return; }
         render();
@@ -282,8 +290,10 @@ async function toggleUniversity(name) {
 }
 
 function renderHome() {
+    const isFree = currentUser?.subscriptionTier === 'free';
     return `
         <div class="app-layout">
+            ${!isFree ? `
             <aside class="filter-sidebar" id="filter-sidebar">
                 <div class="sidebar-header">
                     <span>Filtros</span>
@@ -326,18 +336,25 @@ function renderHome() {
                     </div>
                 </div>
             </aside>
+            ` : ''}
 
             <main class="main-content">
                 <div class="container">
                     <header class="header">
-                        <button class="sidebar-toggle-btn" onclick="toggleSidebar()" title="Filtros">&#9776;</button>
+                        ${!isFree ? `<button class="sidebar-toggle-btn" onclick="toggleSidebar()" title="Filtros">&#9776;</button>` : ''}
                         <h1 class="logo">SesamoTV</h1>
                         <div class="header-right">
+                            ${isFree ? `<button class="btn btn-premium-cta" onclick="showPremiumInfo()">&#11088; Hazte Premium</button>` : ''}
                             <span class="user-name">${escapeHtml(currentUser?.username || '')}</span>
                             <button class="btn btn-sm btn-outline" onclick="handleLogout()">Salir</button>
                         </div>
                     </header>
 
+                    ${isFree ? `
+                    <div class="free-tier-banner">
+                        Estas viendo una seleccion de videos. <strong><a href="#" onclick="showPremiumInfo();return false;">Hazte Premium</a></strong> para acceso completo con todos los filtros y busqueda.
+                    </div>
+                    ` : `
                     <div class="search-bar">
                         <input type="text" id="search-input" placeholder="Buscar videos..."
                                value="${escapeHtml(searchQuery)}" oninput="handleSearch(this.value)">
@@ -350,6 +367,7 @@ function renderHome() {
                                     data-tag="${escapeHtml(t.name)}">${escapeHtml(t.name)} (${t.video_count})</button>
                         `).join('')}
                     </div>
+                    `}
 
                     <div class="video-grid">
                         ${videos.length === 0 ? '<p class="empty-msg">No hay videos disponibles</p>' :
@@ -381,6 +399,32 @@ function renderHome() {
             </main>
         </div>
     `;
+}
+
+function showPremiumInfo() {
+    const menu = document.createElement('div');
+    menu.id = 'premium-menu';
+    menu.className = 'share-menu-overlay';
+    menu.innerHTML = `
+        <div class="share-menu">
+            <div class="share-menu-header">
+                <span style="font-weight:600;font-size:16px;">&#11088; Hazte Premium</span>
+                <button class="share-menu-close" onclick="document.getElementById('premium-menu').remove()">&#10005;</button>
+            </div>
+            <div style="padding:16px 0 8px;">
+                <p style="margin-bottom:12px;">Con Premium tienes acceso completo a SesamoTV:</p>
+                <ul style="list-style:none;padding:0;display:flex;flex-direction:column;gap:8px;">
+                    <li>&#10003; Todos los videos sin limite</li>
+                    <li>&#10003; Busqueda de videos</li>
+                    <li>&#10003; Filtros por provincia y universidad</li>
+                    <li>&#10003; Filtros por tags</li>
+                </ul>
+                <p style="margin-top:16px;color:#888;font-size:0.9em;">Para obtener acceso Premium, contacta con el administrador.</p>
+            </div>
+        </div>
+    `;
+    menu.addEventListener('click', function(e) { if (e.target === menu) menu.remove(); });
+    document.body.appendChild(menu);
 }
 
 // --- Player ---
