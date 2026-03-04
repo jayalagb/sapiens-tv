@@ -65,7 +65,7 @@ function renderLanding() {
     return `
         <div class="landing">
             <div class="landing-hero">
-                <h1 class="landing-logo">SesamoTV</h1>
+                <h1 class="landing-logo">SapiensTV</h1>
                 <p class="landing-tagline">Tu plataforma de videos</p>
                 <div class="landing-actions">
                     <button class="btn btn-landing-primary" onclick="navigateTo('login')">Iniciar Sesion</button>
