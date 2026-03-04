@@ -549,6 +549,16 @@ body {
     color: var(--gray);
 }
 
+.user-name-premium {
+    padding: 3px 10px;
+    border-radius: 12px;
+    background: linear-gradient(white, white) padding-box,
+                linear-gradient(135deg, #f5a623, #f0d000) border-box;
+    border: 2px solid transparent;
+    color: #a06000;
+    font-weight: 600;
+}
+
 /* ===== APP LAYOUT (sidebar + main) ===== */
 .app-layout {
     display: flex;

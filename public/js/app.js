@@ -345,7 +345,7 @@ function renderHome() {
                         <h1 class="logo">SesamoTV</h1>
                         <div class="header-right">
                             ${isFree ? `<button class="btn btn-premium-cta" onclick="showPremiumInfo()">&#11088; Hazte Premium</button>` : ''}
-                            <span class="user-name">${escapeHtml(currentUser?.username || '')}</span>
+                            <span class="user-name${currentUser?.subscriptionTier === 'premium' ? ' user-name-premium' : ''}">${escapeHtml(currentUser?.username || '')}</span>
                             <button class="btn btn-sm btn-outline" onclick="handleLogout()">Salir</button>
                         </div>
                     </header>
