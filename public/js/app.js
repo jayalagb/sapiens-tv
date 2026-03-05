@@ -66,7 +66,7 @@ function renderLanding() {
         <div class="landing">
             <div class="landing-hero">
                 <h1 class="landing-logo">SapiensTV</h1>
-                <p class="landing-tagline">La decisiñon más importante de tu carrera en un click</p>
+                <p class="landing-tagline">La decisión más importante de tu carrera en un click</p>
                 <div class="landing-actions">
                     <button class="btn btn-landing-primary" onclick="navigateTo('login')">Iniciar Sesion</button>
                     <button class="btn btn-landing-secondary" onclick="navigateTo('register')">Crear Cuenta</button>
