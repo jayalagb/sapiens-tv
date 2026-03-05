@@ -349,7 +349,7 @@ body {
     display: flex;
     align-items: center;
     justify-content: center;
-    background: linear-gradient(135deg, var(--accent) 0%, #0a1a96 100%);
+    background: linear-gradient(135deg, var(--accent) 0%, #f57905 100%);
     color: var(--white);
 }
 
