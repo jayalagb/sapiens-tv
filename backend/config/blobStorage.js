@@ -1,59 +1,73 @@
-const { BlobServiceClient, BlobSASPermissions } = require('@azure/storage-blob');
+const { S3Client, GetObjectCommand, HeadObjectCommand, DeleteObjectCommand, PutObjectCommand } = require('@aws-sdk/client-s3');
+const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
+const fs = require('fs');
 
-const connectionString = process.env.AZURE_STORAGE_CONNECTION_STRING;
-const containerName = process.env.AZURE_STORAGE_CONTAINER || 'videos';
+const region = process.env.AWS_REGION || 'eu-south-2';
+const bucket = process.env.AWS_S3_BUCKET;
 
-let containerClient = null;
+let s3Client = null;
 
-function getContainerClient() {
-    if (!containerClient) {
-        if (!connectionString) {
-            throw new Error('AZURE_STORAGE_CONNECTION_STRING no configurado');
+function getS3Client() {
+    if (!s3Client) {
+        if (!bucket) {
+            throw new Error('AWS_S3_BUCKET no configurado');
         }
-        const blobServiceClient = BlobServiceClient.fromConnectionString(connectionString);
-        containerClient = blobServiceClient.getContainerClient(containerName);
+        s3Client = new S3Client({ region });
     }
-    return containerClient;
+    return s3Client;
 }
 
 async function uploadBlob(blobName, filePath) {
-    const client = getContainerClient();
-    const blockBlobClient = client.getBlockBlobClient(blobName);
-    await blockBlobClient.uploadFile(filePath);
+    const client = getS3Client();
+    const fileStream = fs.createReadStream(filePath);
+    await client.send(new PutObjectCommand({
+        Bucket: bucket,
+        Key: blobName,
+        Body: fileStream,
+    }));
     return blobName;
 }
 
 async function getBlobProperties(blobName) {
-    const client = getContainerClient();
-    const blockBlobClient = client.getBlockBlobClient(blobName);
-    const properties = await blockBlobClient.getProperties();
+    const client = getS3Client();
+    const response = await client.send(new HeadObjectCommand({
+        Bucket: bucket,
+        Key: blobName,
+    }));
     return {
-        contentLength: properties.contentLength,
-        contentType: properties.contentType
+        contentLength: response.ContentLength,
+        contentType: response.ContentType,
     };
 }
 
 async function downloadBlobStream(blobName, offset, count) {
-    const client = getContainerClient();
-    const blockBlobClient = client.getBlockBlobClient(blobName);
-    const response = await blockBlobClient.download(offset, count);
-    return response.readableStreamBody;
+    const client = getS3Client();
+    const range = count !== undefined
+        ? `bytes=${offset}-${offset + count - 1}`
+        : `bytes=${offset}-`;
+    const response = await client.send(new GetObjectCommand({
+        Bucket: bucket,
+        Key: blobName,
+        Range: range,
+    }));
+    return response.Body;
 }
 
 async function deleteBlob(blobName) {
-    const client = getContainerClient();
-    const blockBlobClient = client.getBlockBlobClient(blobName);
-    await blockBlobClient.deleteIfExists();
+    const client = getS3Client();
+    await client.send(new DeleteObjectCommand({
+        Bucket: bucket,
+        Key: blobName,
+    }));
 }
 
 async function generateSasUrl(blobName, expiresInMinutes = 60) {
-    const client = getContainerClient();
-    const blobClient = client.getBlobClient(blobName);
-    const url = await blobClient.generateSasUrl({
-        permissions: BlobSASPermissions.parse('r'),
-        expiresOn: new Date(Date.now() + expiresInMinutes * 60 * 1000)
+    const client = getS3Client();
+    const command = new GetObjectCommand({
+        Bucket: bucket,
+        Key: blobName,
     });
-    return url;
+    return getSignedUrl(client, command, { expiresIn: expiresInMinutes * 60 });
 }
 
 module.exports = { uploadBlob, getBlobProperties, downloadBlobStream, deleteBlob, generateSasUrl };

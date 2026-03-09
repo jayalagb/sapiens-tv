@@ -30,8 +30,8 @@ app.use(helmet({
             scriptSrcAttr: ["'unsafe-inline'"],
             styleSrc: ["'self'", "'unsafe-inline'"],
             imgSrc: ["'self'", "data:"],
-            mediaSrc: ["'self'", "blob:", "https://*.blob.core.windows.net"],
-            connectSrc: ["'self'", "https://*.blob.core.windows.net"],
+            mediaSrc: ["'self'", "blob:", "https://*.cloudfront.net"],
+            connectSrc: ["'self'", "https://*.cloudfront.net"],
             frameAncestors: ["'none'"]
         }
     },
