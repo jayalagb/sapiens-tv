@@ -65,7 +65,7 @@ function renderLanding() {
     return `
         <div class="landing">
             <div class="landing-hero">
-                <h1 class="landing-logo">SapiensTV</h1>
+                <h1 class="landing-logo">Sapiens Futura</h1>
                 <p class="landing-tagline">La decisión más importante de tu carrera a un click</p>
                 <div class="landing-actions">
                     <button class="btn btn-landing-primary" onclick="navigateTo('login')">Iniciar Sesion</button>
