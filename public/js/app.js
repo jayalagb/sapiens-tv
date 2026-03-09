@@ -144,7 +144,7 @@ function renderRegisterScreen() {
                 <div id="auth-success" class="auth-msg success" style="display:none"></div>
                 <input type="text" id="reg-user" class="auth-input" placeholder="Nombre de usuario">
                 <input type="email" id="reg-email" class="auth-input" placeholder="Email">
-                <input type="password" id="reg-pass" class="auth-input" placeholder="Contrasena (min 8, mayuscula, minuscula, numero)">
+                <input type="password" id="reg-pass" class="auth-input" placeholder="Contraseña (min 8, mayuscula, minuscula, numero)">
                 <button class="btn btn-primary btn-full" onclick="handleRegister()" id="reg-btn">Registrarse</button>
                 <p class="auth-link">Ya tienes cuenta? <a href="#" onclick="navigateTo('login');return false">Inicia sesion</a></p>
                 <p class="auth-link"><a href="#" onclick="navigateTo('landing');return false">Volver</a></p>
