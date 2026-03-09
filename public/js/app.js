@@ -85,10 +85,10 @@ function renderLoginScreen() {
                 <h2 class="auth-title">Iniciar Sesion</h2>
                 <div id="auth-error" class="auth-msg error" style="display:none"></div>
                 <input type="text" id="login-user" class="auth-input" placeholder="Usuario o email">
-                <input type="password" id="login-pass" class="auth-input" placeholder="Contrasena"
+                <input type="password" id="login-pass" class="auth-input" placeholder="Contraseña"
                        onkeydown="if(event.key==='Enter')handleLogin()">
                 <button class="btn btn-primary btn-full" onclick="handleLogin()" id="login-btn">Entrar</button>
-                <p class="auth-link"><a href="#" onclick="navigateTo('reset');return false">Olvidaste tu contrasena?</a></p>
+                <p class="auth-link"><a href="#" onclick="navigateTo('reset');return false">Olvidaste tu contraseña?</a></p>
                 <p class="auth-link">No tienes cuenta? <a href="#" onclick="navigateTo('register');return false">Registrate</a></p>
                 <p class="auth-link"><a href="#" onclick="navigateTo('landing');return false">Volver</a></p>
             </div>
@@ -170,7 +170,7 @@ async function handleRegister() {
     }
 
     if (password.length < 8 || !/[a-z]/.test(password) || !/[A-Z]/.test(password) || !/[0-9]/.test(password)) {
-        errEl.textContent = 'La contrasena debe tener al menos 8 caracteres, con mayuscula, minuscula y numero';
+        errEl.textContent = 'La contraseña debe tener al menos 8 caracteres, con mayuscula, minuscula y numero';
         errEl.style.display = 'block';
         return;
     }
@@ -203,8 +203,8 @@ function renderResetScreen() {
     return `
         <div class="auth-screen">
             <div class="auth-box">
-                <h2 class="auth-title">Recuperar Contrasena</h2>
-                <p class="auth-subtitle">Introduce tu email y enviaremos una solicitud al administrador para resetear tu contrasena.</p>
+                <h2 class="auth-title">Recuperar Contraseña</h2>
+                <p class="auth-subtitle">Introduce tu email y enviaremos una solicitud al administrador para resetear tu contraseña.</p>
                 <div id="auth-error" class="auth-msg error" style="display:none"></div>
                 <div id="auth-success" class="auth-msg success" style="display:none"></div>
                 <input type="email" id="reset-email" class="auth-input" placeholder="Tu email"
